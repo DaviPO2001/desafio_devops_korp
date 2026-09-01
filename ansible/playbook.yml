@@ -1,0 +1,155 @@
+---
+- name: Provisionar ambiente Projeto Korp
+  hosts: projeto_korp
+  become: true
+
+  vars:
+    project_dir: /opt/http-server-projeto-korp
+    docker_network: projeto-korp-network
+    docker_image: projeto-korp-imagem:latest
+
+  tasks:
+
+    - name: Remover configuracao antiga do repositorio Docker
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/docker.list
+        - /etc/apt/sources.list.d/docker.sources
+
+    - name: Instalar dependencias para Docker
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+        update_cache: true
+
+    - name: Criar diretorio de chaves do APT
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Baixar chave GPG do Docker
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/debian/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Obter arquitetura da maquina
+      ansible.builtin.command:
+        cmd: dpkg --print-architecture
+      register: docker_arch
+      changed_when: false
+
+    - name: Adicionar repositorio oficial do Docker
+      ansible.builtin.apt_repository:
+        repo: "deb [arch={{ docker_arch.stdout }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+        filename: docker
+        state: present
+
+    - name: Instalar Docker e Docker Compose
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Garantir que Docker esteja iniciado
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Criar diretorio do projeto
+      ansible.builtin.file:
+        path: "{{ project_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copiar main.go
+      ansible.builtin.copy:
+        src: ../main.go
+        dest: "{{ project_dir }}/main.go"
+
+    - name: Copiar go.mod
+      ansible.builtin.copy:
+        src: ../go.mod
+        dest: "{{ project_dir }}/go.mod"
+
+    - name: Copiar go.sum
+      ansible.builtin.copy:
+        src: ../go.sum
+        dest: "{{ project_dir }}/go.sum"
+
+    - name: Copiar Dockerfile
+      ansible.builtin.copy:
+        src: ../Dockerfile
+        dest: "{{ project_dir }}/Dockerfile"
+
+    - name: Copiar Docker Compose
+      ansible.builtin.copy:
+        src: ../docker-compose.yml
+        dest: "{{ project_dir }}/docker-compose.yml"
+
+    - name: Copiar configuracao do NGINX
+      ansible.builtin.copy:
+        src: ../nginx/
+        dest: "{{ project_dir }}/nginx/"
+
+    - name: Copiar configuracao do Prometheus
+      ansible.builtin.copy:
+        src: ../prometheus/
+        dest: "{{ project_dir }}/prometheus/"
+
+    - name: Copiar configuracao do Grafana
+      ansible.builtin.copy:
+        src: ../grafana/
+        dest: "{{ project_dir }}/grafana/"
+
+    - name: Verificar se a rede Docker existe
+      ansible.builtin.command:
+        cmd: "docker network inspect {{ docker_network }}"
+      register: network_check
+      failed_when: false
+      changed_when: false
+
+    - name: Criar rede Docker
+      ansible.builtin.command:
+        cmd: "docker network create --driver bridge {{ docker_network }}"
+      when: network_check.rc != 0
+
+    - name: Build da imagem da aplicacao
+      ansible.builtin.command:
+        cmd: "docker build -t {{ docker_image }} ."
+        chdir: "{{ project_dir }}"
+
+    - name: Subir containers com Docker Compose
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ project_dir }}"
+
+    - name: Aguardar NGINX ficar disponivel
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 80
+        timeout: 60
+
+    - name: Validar funcionamento da aplicacao
+      ansible.builtin.uri:
+        url: http://localhost:80/projeto-korp
+        method: GET
+        return_content: true
+        status_code: 200
+      register: resposta_aplicacao
+
+    - name: Exibir resposta da aplicacao
+      ansible.builtin.debug:
+        var: resposta_aplicacao.content
