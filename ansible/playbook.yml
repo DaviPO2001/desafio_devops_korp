@@ -8,6 +8,9 @@
     docker_network: projeto-korp-network
     docker_image: projeto-korp-imagem:latest
 
+    docker_repo_os: "{{ 'ubuntu' if ansible_distribution == 'Ubuntu' else 'debian' }}"
+    
+
   tasks:
 
     - name: Remover configuracao antiga do repositorio Docker
@@ -35,7 +38,7 @@
 
     - name: Baixar chave GPG do Docker
       ansible.builtin.get_url:
-        url: https://download.docker.com/linux/debian/gpg
+        url: "https://download.docker.com/linux/{{ docker_repo_os }}/gpg"
         dest: /etc/apt/keyrings/docker.asc
         mode: "0644"
 
@@ -47,7 +50,7 @@
 
     - name: Adicionar repositorio oficial do Docker
       ansible.builtin.apt_repository:
-        repo: "deb [arch={{ docker_arch.stdout }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+        repo: "deb [arch={{ docker_arch.stdout }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ docker_repo_os }} {{ ansible_distribution_release }} stable"
         filename: docker
         state: present
 
