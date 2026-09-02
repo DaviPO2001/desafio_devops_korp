@@ -1282,3 +1282,126 @@
     - name: Mostrar versao do k6
       ansible.builtin.debug:
         var: k6_version.stdout
+
+# =========================================================
+# 8. ARGO CD - REGISTRAR ROOT APPLICATION
+# =========================================================
+
+- name: Registrar Root Application no Argo CD
+  hosts: manager
+  become: true
+
+  vars:
+
+    root_app_file: "/projeto-korp/kubernetes/argocd/root-app.yaml"
+
+
+  tasks:
+
+    # =====================================================
+    # VALIDAR ARQUIVO
+    # =====================================================
+
+    - name: Verificar root-app.yaml
+      ansible.builtin.stat:
+        path: "{{ root_app_file }}"
+      register: root_app_manifest
+
+
+    - name: Validar root-app.yaml
+      ansible.builtin.assert:
+        that:
+          - root_app_manifest.stat.exists
+        fail_msg: "Arquivo {{ root_app_file }} nao encontrado."
+
+
+    # =====================================================
+    # REGISTRAR ROOT APP
+    # =====================================================
+
+    - name: Aplicar Root Application
+      ansible.builtin.command:
+        cmd: >
+          kubectl apply
+          -f {{ root_app_file }}
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: root_app_apply
+
+      changed_when: >
+        'created' in root_app_apply.stdout or
+        'configured' in root_app_apply.stdout
+
+
+    # =====================================================
+    # AGUARDAR ROOT APP
+    # =====================================================
+
+    - name: Aguardar Root Application aparecer
+      ansible.builtin.command:
+        cmd: >
+          kubectl get application
+          root-app
+          -n argocd
+      register: root_app_status
+      retries: 20
+      delay: 3
+      until: root_app_status.rc == 0
+      changed_when: false
+
+
+    # =====================================================
+    # AGUARDAR PROJETO KORP
+    # =====================================================
+
+    - name: Aguardar Application Projeto Korp aparecer
+      ansible.builtin.command:
+        cmd: >
+          kubectl get application
+          projeto-korp
+          -n argocd
+      register: projeto_korp_status
+      retries: 20
+      delay: 3
+      until: projeto_korp_status.rc == 0
+      changed_when: false
+
+
+    # =====================================================
+    # MOSTRAR APPLICATIONS
+    # =====================================================
+
+    - name: Listar Applications do Argo CD
+      ansible.builtin.command:
+        cmd: >
+          kubectl get applications
+          -n argocd
+          -o wide
+      register: argocd_applications
+      changed_when: false
+
+
+    - name: Mostrar Applications
+      ansible.builtin.debug:
+        var: argocd_applications.stdout_lines
+
+
+    # =====================================================
+    # RESULTADO
+    # =====================================================
+
+    - name: Mostrar resultado do GitOps
+      ansible.builtin.debug:
+        msg:
+          - "=============================================="
+          - "ARGO CD GITOPS CONFIGURADO"
+          - ""
+          - "Root Application:"
+          - "root-app"
+          - ""
+          - "Application:"
+          - "projeto-korp"
+          - ""
+          - "Argo CD:"
+          - "https://localhost:8443"
+          - "=============================================="

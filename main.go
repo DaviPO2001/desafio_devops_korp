@@ -55,9 +55,9 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/projeto-korp", projetoKorpHandler)
-        mux.HandleFunc("/health", healthHandler)
-	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/projeto-korp", projetoKorpHandler) // endpoint principal da aplicação
+        mux.HandleFunc("/health", healthHandler) // endpoint de health check
+	mux.Handle("/metrics", promhttp.Handler())    // endpoint de métricas coletado pelo Prometheus
 
 	log.Println("http-server-projeto-korp iniciado na porta 8080")
 
