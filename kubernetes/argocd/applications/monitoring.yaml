@@ -1,0 +1,68 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+
+metadata:
+  name: monitoring
+  namespace: argocd
+
+spec:
+  project: default
+
+  # =======================================================
+  # FONTES
+  # =======================================================
+
+  sources:
+
+    # -----------------------------------------------------
+    # CHART OFICIAL KUBE-PROMETHEUS-STACK
+    # -----------------------------------------------------
+
+    - repoURL: https://prometheus-community.github.io/helm-charts
+
+      chart: kube-prometheus-stack
+
+      # Mesma versao que ja esta instalada atualmente
+      targetRevision: 88.6.3
+
+      helm:
+
+        # Mantem o mesmo nome do release Helm atual
+        releaseName: monitoramento
+
+        # values.yaml armazenado no nosso GitHub
+        valueFiles:
+          - $values/kubernetes/monitoring/values.yaml
+
+
+    # -----------------------------------------------------
+    # REPOSITORIO DOS VALUES
+    # -----------------------------------------------------
+
+    - repoURL: https://github.com/DaviPO2001/desafio_devops_korp.git
+
+      targetRevision: main
+
+      ref: values
+
+
+  # =======================================================
+  # CLUSTER DESTINO
+  # =======================================================
+
+  destination:
+
+    server: https://kubernetes.default.svc
+
+    namespace: monitoring
+
+
+  # =======================================================
+  # SINCRONIZACAO
+  # =======================================================
+
+  syncPolicy:
+
+    syncOptions:
+
+      - CreateNamespace=true
