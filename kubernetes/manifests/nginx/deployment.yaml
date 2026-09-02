@@ -19,14 +19,13 @@ spec:
 
     spec:
 
-      # Mantemos o NGINX no worker para deixar o acesso
-      # pelo Vagrant deterministico neste laboratorio
       nodeSelector:
         kubernetes.io/hostname: projeto-korp-worker
 
       containers:
         - name: nginx
-          image: nginx:latest
+
+          image: nginx:1.30.4-alpine
           imagePullPolicy: IfNotPresent
 
           ports:

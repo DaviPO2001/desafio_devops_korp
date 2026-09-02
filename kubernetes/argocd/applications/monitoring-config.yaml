@@ -2,11 +2,11 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 
 metadata:
-  name: projeto-korp
+  name: monitoring-config
   namespace: argocd
 
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "2"
 
 spec:
   project: default
@@ -14,28 +14,25 @@ spec:
   source:
     repoURL: https://github.com/DaviPO2001/desafio_devops_korp.git
     targetRevision: main
-    path: kubernetes/manifests
-
-    directory:
-      recurse: true
+    path: kubernetes/monitoring
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: projeto-korp
+    namespace: monitoring
 
   syncPolicy:
+
     automated:
       prune: true
       selfHeal: true
 
     syncOptions:
       - CreateNamespace=true
-      - RespectIgnoreDifferences=true
 
-  ignoreDifferences:
-    - group: apps
-      kind: Deployment
-      name: http-server-projeto-korp
-      namespace: projeto-korp
-      jsonPointers:
-        - /spec/replicas
+    retry:
+      limit: 10
+
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 1m
