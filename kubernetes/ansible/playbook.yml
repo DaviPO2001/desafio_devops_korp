@@ -723,10 +723,10 @@
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
   vars:
-    host_argo_port: "8443"
-    host_app_port: "8080"
-    host_grafana_port: "3000"
-    host_prometheus_port: "9090"
+    host_argo_port: "1000"
+    host_app_port: "1001"
+    host_grafana_port: "1002"
+    host_prometheus_port: "1003"
 
   tasks:
 
