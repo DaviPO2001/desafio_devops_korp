@@ -21,7 +21,7 @@ spec:
       containers:
         - name: http-server-projeto-korp
 
-          image: davipo2001/desafio_devops_korp:1181a4e
+          image: davipo2001/desafio_devops_korp:38f8dbc
           imagePullPolicy: Always
 
           ports:
