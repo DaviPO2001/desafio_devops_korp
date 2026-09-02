@@ -5,8 +5,8 @@
     "name": "adr7t8f",
     "namespace": "default",
     "uid": "129b557a-8648-4ee7-8bf9-6ba32ab30cc2",
-    "resourceVersion": "1788371080541981",
-    "generation": 2,
+    "resourceVersion": "1788373505998993",
+    "generation": 3,
     "creationTimestamp": "2026-09-02T17:19:40Z",
     "labels": {
       "grafana.app/deprecatedInternalID": "1026168955338752"
@@ -15,11 +15,11 @@
       "grafana.app/createdBy": "access-policy:service",
       "grafana.app/managedBy": "classic-file-provisioning",
       "grafana.app/managerId": "sidecarProvider",
-      "grafana.app/sourceChecksum": "3cbba3bb44162872237471c18a586160",
+      "grafana.app/sourceChecksum": "01ea042282f35001ba3b2ea304bf3eac",
       "grafana.app/sourcePath": "/tmp/dashboards/projeto-korp.json",
-      "grafana.app/sourceTimestamp": "1788371080000",
+      "grafana.app/sourceTimestamp": "1788373505000",
       "grafana.app/updatedBy": "access-policy:service",
-      "grafana.app/updatedTimestamp": "2026-09-02T17:44:40Z",
+      "grafana.app/updatedTimestamp": "2026-09-02T18:25:05Z",
       "grafana.app/folder": ""
     }
   },
