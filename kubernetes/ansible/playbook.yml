@@ -69,9 +69,6 @@
         enabled: true
 
 
-    # Importante para cluster que ja existia.
-    # Se config.yaml mudou, reinicia o K3s para o Flannel
-    # passar a utilizar eth1.
     - name: Reiniciar K3s Server quando configuracao do Flannel mudar
       ansible.builtin.service:
         name: k3s
@@ -251,6 +248,9 @@
   hosts: manager
   become: true
 
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
   tasks:
 
     # =====================================================
@@ -285,7 +285,7 @@
 
     - name: Remover pod antigo de teste DNS
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           kubectl delete pod dns-ansible-test
           -n default
           --ignore-not-found=true
@@ -294,19 +294,18 @@
 
     - name: Criar pod temporario para teste de DNS no worker
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           kubectl run dns-ansible-test
           -n default
           --image=busybox:1.36
           --restart=Never
           --overrides='{"spec":{"nodeSelector":{"kubernetes.io/hostname":"projeto-korp-worker"}}}'
           -- sleep 300
-      changed_when: true
 
 
     - name: Aguardar pod de teste DNS ficar Ready
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           kubectl wait
           --for=condition=Ready
           pod/dns-ansible-test
@@ -317,7 +316,7 @@
 
     - name: Testar DNS interno do Kubernetes
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           kubectl exec
           -n default
           dns-ansible-test
@@ -337,7 +336,7 @@
 
     - name: Remover pod temporario de teste DNS
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           kubectl delete pod dns-ansible-test
           -n default
           --ignore-not-found=true
@@ -403,8 +402,6 @@
     - name: Verificar se Argo CD ja esta instalado
       ansible.builtin.command:
         cmd: helm status argocd -n argocd
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       register: argocd_status
       changed_when: false
       failed_when: false
@@ -412,15 +409,13 @@
 
     - name: Instalar Argo CD
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           helm install argocd argo/argo-cd
           --namespace argocd
           --create-namespace
           --set server.nodeSelector.kubernetes\.io/hostname=projeto-korp-worker
           --wait
           --timeout 5m
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       register: argocd_install
       when: argocd_status.rc != 0
 
@@ -449,7 +444,7 @@
 
     - name: Expor Argo CD como NodePort
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           kubectl patch service argocd-server
           -n argocd
           -p '{"spec":{"type":"NodePort","ports":[{"name":"https","port":443,"targetPort":8080,"nodePort":30443}]}}'
@@ -480,7 +475,7 @@
 
 
     - name: Obter senha inicial do Argo CD
-      ansible.builtin.shell: >
+      ansible.builtin.shell: >-
         kubectl -n argocd
         get secret argocd-initial-admin-secret
         -o jsonpath='{.data.password}'
@@ -502,424 +497,149 @@
 
 
 # =========================================================
-# 4. DOCKER - BUILD + TAG + PUSH
+# 4. ARGO CD - ROOT APPLICATION / GITOPS
 # =========================================================
 
-- name: Build e Push da aplicacao para Docker Hub
+- name: Registrar Root Application no Argo CD
   hosts: manager
   become: true
 
-  vars:
-    dockerhub_usuario: "davipo2001"
-    docker_imagem: "desafio_devops_korp"
-    docker_tag: "v1"
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
-    projeto_dir: "/projeto-korp"
-    env_file: "/vagrant/.env"
+  vars:
+    root_app_file: "/projeto-korp/kubernetes/argocd/root-app.yaml"
 
   tasks:
 
-    - name: Verificar se arquivo .env existe
+    # =====================================================
+    # VALIDAR ARQUIVO
+    # =====================================================
+
+    - name: Verificar root-app.yaml
       ansible.builtin.stat:
-        path: "{{ env_file }}"
-      register: arquivo_env
+        path: "{{ root_app_file }}"
+      register: root_app_manifest
 
 
-    - name: Validar arquivo .env
+    - name: Validar root-app.yaml
       ansible.builtin.assert:
         that:
-          - arquivo_env.stat.exists
-        fail_msg: "Arquivo .env nao encontrado em {{ env_file }}"
+          - root_app_manifest.stat.exists
+        fail_msg: "Arquivo {{ root_app_file }} nao encontrado."
 
 
-    - name: Ler token do Docker Hub no .env
-      ansible.builtin.set_fact:
-        dockerhub_token: >-
-          {{
-            lookup(
-              'ansible.builtin.ini',
-              'DOCKERHUB_TOKEN type=properties file=' + env_file
-            )
-          }}
-      no_log: true
+    # =====================================================
+    # REGISTRAR ROOT APP
+    # =====================================================
+
+    - name: Aplicar Root Application
+      ansible.builtin.command:
+        cmd: >-
+          kubectl apply
+          -f {{ root_app_file }}
+      register: root_app_apply
+      changed_when: >
+        'created' in root_app_apply.stdout or
+        'configured' in root_app_apply.stdout
 
 
-    - name: Validar token do Docker Hub
-      ansible.builtin.assert:
-        that:
-          - dockerhub_token is defined
-          - dockerhub_token | length > 0
-        fail_msg: "DOCKERHUB_TOKEN nao foi definido no arquivo .env."
-      no_log: true
+    # =====================================================
+    # AGUARDAR APPLICATIONS
+    # =====================================================
+
+    - name: Aguardar Root Application aparecer
+      ansible.builtin.command:
+        cmd: kubectl get application root-app -n argocd
+      register: root_app_status
+      retries: 40
+      delay: 3
+      until: root_app_status.rc == 0
+      changed_when: false
 
 
-    - name: Instalar Docker
-      ansible.builtin.apt:
-        name: docker.io
-        state: present
-        update_cache: true
+    - name: Aguardar Application Projeto Korp aparecer
+      ansible.builtin.command:
+        cmd: kubectl get application projeto-korp -n argocd
+      register: projeto_korp_status
+      retries: 40
+      delay: 3
+      until: projeto_korp_status.rc == 0
+      changed_when: false
 
 
-    - name: Garantir que Docker esteja iniciado
-      ansible.builtin.service:
-        name: docker
-        state: started
-        enabled: true
+    - name: Aguardar Application Monitoring aparecer
+      ansible.builtin.command:
+        cmd: kubectl get application monitoring -n argocd
+      register: monitoring_application_status
+      retries: 40
+      delay: 3
+      until: monitoring_application_status.rc == 0
+      changed_when: false
 
 
-    - name: Verificar Dockerfile
-      ansible.builtin.stat:
-        path: "{{ projeto_dir }}/Dockerfile"
-      register: dockerfile_projeto
+    # =====================================================
+    # AGUARDAR NAMESPACE DA APLICACAO
+    # =====================================================
+
+    - name: Aguardar namespace projeto-korp ser criado pelo Argo CD
+      ansible.builtin.command:
+        cmd: kubectl get namespace projeto-korp
+      register: projeto_korp_namespace
+      retries: 40
+      delay: 3
+      until: projeto_korp_namespace.rc == 0
+      changed_when: false
 
 
-    - name: Validar Dockerfile
-      ansible.builtin.assert:
-        that:
-          - dockerfile_projeto.stat.exists
-        fail_msg: "Dockerfile nao encontrado em {{ projeto_dir }}/Dockerfile"
+    # =====================================================
+    # MOSTRAR APPLICATIONS
+    # =====================================================
+
+    - name: Listar Applications do Argo CD
+      ansible.builtin.command:
+        cmd: kubectl get applications -n argocd -o wide
+      register: argocd_applications
+      changed_when: false
 
 
-    - name: Verificar main.go
-      ansible.builtin.stat:
-        path: "{{ projeto_dir }}/main.go"
-      register: main_go_projeto
+    - name: Mostrar Applications
+      ansible.builtin.debug:
+        var: argocd_applications.stdout_lines
 
 
-    - name: Validar main.go
-      ansible.builtin.assert:
-        that:
-          - main_go_projeto.stat.exists
-        fail_msg: "main.go nao encontrado em {{ projeto_dir }}/main.go"
-
-
-    - name: Login, build e push da imagem
-      block:
-
-        - name: Login no Docker Hub
-          ansible.builtin.command:
-            cmd: >
-              docker login
-              --username {{ dockerhub_usuario }}
-              --password-stdin
-            stdin: "{{ dockerhub_token }}"
-          no_log: true
-          changed_when: false
-
-
-        - name: Build e tag da imagem
-          ansible.builtin.command:
-            cmd: >
-              docker build
-              -t {{ dockerhub_usuario }}/{{ docker_imagem }}:{{ docker_tag }}
-              .
-          args:
-            chdir: "{{ projeto_dir }}"
-          register: docker_build
-
-
-        - name: Push da imagem para Docker Hub
-          ansible.builtin.command:
-            cmd: >
-              docker push
-              {{ dockerhub_usuario }}/{{ docker_imagem }}:{{ docker_tag }}
-          register: docker_push
-
-
-      always:
-
-        - name: Logout do Docker Hub
-          ansible.builtin.command:
-            cmd: docker logout
-          changed_when: false
-          failed_when: false
-
-
-    - name: Mostrar imagem publicada
+    - name: Mostrar resultado do GitOps
       ansible.builtin.debug:
         msg:
           - "=============================================="
-          - "IMAGEM PUBLICADA NO DOCKER HUB"
-          - "Imagem: {{ dockerhub_usuario }}/{{ docker_imagem }}:{{ docker_tag }}"
-          - "=============================================="
-
-
-
-# =========================================================
-# 5. APLICACAO GO - DEPLOY NO KUBERNETES
-# =========================================================
-
-- name: Implantar aplicacao Go no Kubernetes
-  hosts: manager
-  become: true
-
-  vars:
-    manifests_app_dir: "/projeto-korp/kubernetes/manifests/app"
-    namespace_app: "projeto-korp"
-
-  tasks:
-
-    - name: Verificar diretorio dos manifests da aplicacao
-      ansible.builtin.stat:
-        path: "{{ manifests_app_dir }}"
-      register: manifests_app
-
-
-    - name: Validar diretorio dos manifests da aplicacao
-      ansible.builtin.assert:
-        that:
-          - manifests_app.stat.exists
-          - manifests_app.stat.isdir
-        fail_msg: "Diretorio {{ manifests_app_dir }} nao encontrado."
-
-
-    - name: Aplicar Namespace
-      ansible.builtin.command:
-        cmd: >
-          kubectl apply
-          -f {{ manifests_app_dir }}/namespace.yaml
-      register: namespace_apply
-      changed_when: >
-        'created' in namespace_apply.stdout or
-        'configured' in namespace_apply.stdout
-
-
-    - name: Aplicar Deployment da aplicacao
-      ansible.builtin.command:
-        cmd: >
-          kubectl apply
-          -f {{ manifests_app_dir }}/deployment.yaml
-      register: app_deployment_apply
-      changed_when: >
-        'created' in app_deployment_apply.stdout or
-        'configured' in app_deployment_apply.stdout
-
-
-    - name: Aplicar Service da aplicacao
-      ansible.builtin.command:
-        cmd: >
-          kubectl apply
-          -f {{ manifests_app_dir }}/service.yaml
-      register: app_service_apply
-      changed_when: >
-        'created' in app_service_apply.stdout or
-        'configured' in app_service_apply.stdout
-
-
-    - name: Aplicar HPA
-      ansible.builtin.command:
-        cmd: >
-          kubectl apply
-          -f {{ manifests_app_dir }}/hpa.yaml
-      register: app_hpa_apply
-      changed_when: >
-        'created' in app_hpa_apply.stdout or
-        'configured' in app_hpa_apply.stdout
-
-
-    - name: Aguardar Deployment da aplicacao ficar disponivel
-      ansible.builtin.command:
-        cmd: >
-          kubectl rollout status
-          deployment/http-server-projeto-korp
-          -n {{ namespace_app }}
-          --timeout=180s
-      changed_when: false
-
-
-    - name: Verificar pods da aplicacao
-      ansible.builtin.command:
-        cmd: kubectl get pods -n {{ namespace_app }} -o wide
-      register: app_pods
-      changed_when: false
-
-
-    - name: Mostrar pods da aplicacao
-      ansible.builtin.debug:
-        var: app_pods.stdout_lines
-
-
-    - name: Verificar Service da aplicacao
-      ansible.builtin.command:
-        cmd: >
-          kubectl get service
-          http-server-projeto-korp
-          -n {{ namespace_app }}
-      register: app_service
-      changed_when: false
-
-
-    - name: Mostrar Service da aplicacao
-      ansible.builtin.debug:
-        var: app_service.stdout_lines
-
-
-    - name: Verificar HPA
-      ansible.builtin.command:
-        cmd: kubectl get hpa -n {{ namespace_app }}
-      register: app_hpa
-      changed_when: false
-
-
-    - name: Mostrar HPA
-      ansible.builtin.debug:
-        var: app_hpa.stdout_lines
-
-
-
-# =========================================================
-# 6. NGINX - REVERSE PROXY
-# =========================================================
-
-- name: Implantar NGINX no Kubernetes
-  hosts: manager
-  become: true
-
-  vars:
-    manifests_nginx_dir: "/projeto-korp/kubernetes/manifests/nginx"
-    namespace_app: "projeto-korp"
-
-  tasks:
-
-    - name: Verificar diretorio dos manifests do NGINX
-      ansible.builtin.stat:
-        path: "{{ manifests_nginx_dir }}"
-      register: nginx_manifests
-
-
-    - name: Validar diretorio dos manifests do NGINX
-      ansible.builtin.assert:
-        that:
-          - nginx_manifests.stat.exists
-          - nginx_manifests.stat.isdir
-        fail_msg: "Diretorio {{ manifests_nginx_dir }} nao encontrado."
-
-
-    - name: Aplicar ConfigMap do NGINX
-      ansible.builtin.command:
-        cmd: >
-          kubectl apply
-          -f {{ manifests_nginx_dir }}/configmap.yaml
-      register: nginx_configmap_apply
-      changed_when: >
-        'created' in nginx_configmap_apply.stdout or
-        'configured' in nginx_configmap_apply.stdout
-
-
-    - name: Aplicar Service do NGINX
-      ansible.builtin.command:
-        cmd: >
-          kubectl apply
-          -f {{ manifests_nginx_dir }}/service.yaml
-      register: nginx_service_apply
-      changed_when: >
-        'created' in nginx_service_apply.stdout or
-        'configured' in nginx_service_apply.stdout
-
-
-    - name: Aplicar Deployment do NGINX
-      ansible.builtin.command:
-        cmd: >
-          kubectl apply
-          -f {{ manifests_nginx_dir }}/deployment.yaml
-      register: nginx_deployment_apply
-      changed_when: >
-        'created' in nginx_deployment_apply.stdout or
-        'configured' in nginx_deployment_apply.stdout
-
-
-    - name: Reiniciar NGINX quando ConfigMap for alterado
-      ansible.builtin.command:
-        cmd: >
-          kubectl rollout restart
-          deployment/nginx-projeto-korp
-          -n {{ namespace_app }}
-      when: nginx_configmap_apply.changed
-      changed_when: true
-
-
-    - name: Aguardar Deployment do NGINX ficar disponivel
-      ansible.builtin.command:
-        cmd: >
-          kubectl rollout status
-          deployment/nginx-projeto-korp
-          -n {{ namespace_app }}
-          --timeout=180s
-      changed_when: false
-
-
-    - name: Verificar pods do NGINX
-      ansible.builtin.command:
-        cmd: >
-          kubectl get pods
-          -n {{ namespace_app }}
-          -l app=nginx-projeto-korp
-          -o wide
-      register: nginx_pods
-      changed_when: false
-
-
-    - name: Mostrar pods do NGINX
-      ansible.builtin.debug:
-        var: nginx_pods.stdout_lines
-
-
-    - name: Verificar Service do NGINX
-      ansible.builtin.command:
-        cmd: >
-          kubectl get service
-          nginx-projeto-korp
-          -n {{ namespace_app }}
-      register: nginx_service
-      changed_when: false
-
-
-    - name: Mostrar Service do NGINX
-      ansible.builtin.debug:
-        var: nginx_service.stdout_lines
-
-
-    - name: Testar aplicacao atraves do NGINX
-      ansible.builtin.uri:
-        url: http://192.168.56.21:30080/projeto-korp
-        method: GET
-        status_code: 200
-        return_content: true
-      register: nginx_test
-      retries: 10
-      delay: 5
-      until: nginx_test.status == 200
-
-
-    - name: Mostrar resposta da aplicacao
-      ansible.builtin.debug:
-        var: nginx_test.content
-
-
-    - name: Mostrar resultado final
-      ansible.builtin.debug:
-        msg:
-          - "=============================================="
-          - "PROJETO KORP DISPONIVEL"
-          - "Aplicacao: http://localhost:8080/projeto-korp"
-          - "Health: http://localhost:8080/health"
-          - "Metrics: http://localhost:8080/metrics"
+          - "ARGO CD GITOPS CONFIGURADO"
+          - ""
+          - "Root Application: root-app"
+          - "Application: projeto-korp"
+          - "Application: monitoring"
+          - ""
           - "Argo CD: https://localhost:8443"
           - "=============================================="
-  
+
+
+
 # =========================================================
-# 7. MONITORAMENTO - KUBE-PROMETHEUS-STACK
+# 5. MONITORAMENTO - KUBE-PROMETHEUS-STACK
+#
+# TEMPORARIO:
+# O stack ainda e instalado pelo Ansible enquanto ocorre
+# a migracao completa para gerenciamento pelo Argo CD.
 # =========================================================
 
 - name: Instalar stack de monitoramento
   hosts: manager
   become: true
 
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
   vars:
-
     monitoring_namespace: "monitoring"
-
-    monitoring_dir: "/projeto-korp/kubernetes/monitoring"
 
     monitoring_values: "/projeto-korp/kubernetes/monitoring/values.yaml"
 
@@ -929,6 +649,7 @@
 
     helm_release: "monitoramento"
 
+    monitoring_chart_version: "88.6.3"
 
   tasks:
 
@@ -981,7 +702,7 @@
 
     - name: Adicionar repositorio prometheus-community
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           helm repo add
           prometheus-community
           https://prometheus-community.github.io/helm-charts
@@ -1004,7 +725,7 @@
 
     - name: Criar namespace monitoring
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           kubectl create namespace
           {{ monitoring_namespace }}
           --dry-run=client
@@ -1028,17 +749,16 @@
 
     - name: Instalar ou atualizar kube-prometheus-stack
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           helm upgrade --install
           {{ helm_release }}
           prometheus-community/kube-prometheus-stack
+          --version {{ monitoring_chart_version }}
           --namespace {{ monitoring_namespace }}
           --create-namespace
           -f {{ monitoring_values }}
           --wait
           --timeout 10m
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       register: monitoring_install
 
 
@@ -1048,7 +768,7 @@
 
     - name: Aplicar ServiceMonitor da aplicacao
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           kubectl apply
           -f {{ servicemonitor_file }}
       register: servicemonitor_apply
@@ -1062,7 +782,7 @@
     # =====================================================
 
     - name: Criar ConfigMap da dashboard Projeto Korp
-      ansible.builtin.shell: >
+      ansible.builtin.shell: >-
         kubectl create configmap projeto-korp-dashboard
         -n {{ monitoring_namespace }}
         --from-file=projeto-korp.json={{ dashboard_file }}
@@ -1078,7 +798,7 @@
 
     - name: Adicionar label para Grafana detectar dashboard
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           kubectl label configmap
           projeto-korp-dashboard
           -n {{ monitoring_namespace }}
@@ -1088,12 +808,12 @@
 
 
     # =====================================================
-    # VALIDACAO DOS PODS
+    # VALIDACAO
     # =====================================================
 
     - name: Aguardar pods do monitoramento
       ansible.builtin.command:
-        cmd: >
+        cmd: >-
           kubectl wait
           --for=condition=Ready
           pod
@@ -1105,10 +825,7 @@
 
     - name: Verificar pods do monitoramento
       ansible.builtin.command:
-        cmd: >
-          kubectl get pods
-          -n {{ monitoring_namespace }}
-          -o wide
+        cmd: kubectl get pods -n {{ monitoring_namespace }} -o wide
       register: monitoring_pods
       changed_when: false
 
@@ -1118,15 +835,9 @@
         var: monitoring_pods.stdout_lines
 
 
-    # =====================================================
-    # SERVICES
-    # =====================================================
-
     - name: Verificar Services do monitoramento
       ansible.builtin.command:
-        cmd: >
-          kubectl get svc
-          -n {{ monitoring_namespace }}
+        cmd: kubectl get svc -n {{ monitoring_namespace }}
       register: monitoring_services
       changed_when: false
 
@@ -1136,15 +847,9 @@
         var: monitoring_services.stdout_lines
 
 
-    # =====================================================
-    # SERVICEMONITOR
-    # =====================================================
-
     - name: Verificar ServiceMonitor Projeto Korp
       ansible.builtin.command:
-        cmd: >
-          kubectl get servicemonitor
-          -n projeto-korp
+        cmd: kubectl get servicemonitor -n projeto-korp
       register: servicemonitor_result
       changed_when: false
 
@@ -1159,7 +864,7 @@
     # =====================================================
 
     - name: Obter senha inicial do Grafana
-      ansible.builtin.shell: >
+      ansible.builtin.shell: >-
         kubectl get secret
         {{ helm_release }}-grafana
         -n {{ monitoring_namespace }}
@@ -1170,45 +875,31 @@
       changed_when: false
 
 
-    # =====================================================
-    # RESULTADO
-    # =====================================================
-
     - name: Mostrar dados do monitoramento
       ansible.builtin.debug:
-
         msg:
-
           - "=============================================="
-
           - "MONITORAMENTO DISPONIVEL"
-
           - ""
-
           - "Grafana:"
           - "URL: http://localhost:3000"
           - "Usuario: admin"
           - "Senha: {{ grafana_password.stdout }}"
-
           - ""
-
           - "Prometheus:"
           - "URL: http://localhost:9090"
-
           - ""
-
           - "Dashboard customizada:"
           - "projeto-korp"
-
           - ""
-
           - "ServiceMonitor:"
           - "http-server-projeto-korp"
-
           - "=============================================="
 
+
+
 # =========================================================
-# 7. K6 - TESTE DE CARGA NO MANAGER
+# 6. K6 - TESTE DE CARGA NO MANAGER
 # =========================================================
 
 - name: Instalar k6 no manager
@@ -1282,126 +973,3 @@
     - name: Mostrar versao do k6
       ansible.builtin.debug:
         var: k6_version.stdout
-
-# =========================================================
-# 8. ARGO CD - REGISTRAR ROOT APPLICATION
-# =========================================================
-
-- name: Registrar Root Application no Argo CD
-  hosts: manager
-  become: true
-
-  vars:
-
-    root_app_file: "/projeto-korp/kubernetes/argocd/root-app.yaml"
-
-
-  tasks:
-
-    # =====================================================
-    # VALIDAR ARQUIVO
-    # =====================================================
-
-    - name: Verificar root-app.yaml
-      ansible.builtin.stat:
-        path: "{{ root_app_file }}"
-      register: root_app_manifest
-
-
-    - name: Validar root-app.yaml
-      ansible.builtin.assert:
-        that:
-          - root_app_manifest.stat.exists
-        fail_msg: "Arquivo {{ root_app_file }} nao encontrado."
-
-
-    # =====================================================
-    # REGISTRAR ROOT APP
-    # =====================================================
-
-    - name: Aplicar Root Application
-      ansible.builtin.command:
-        cmd: >
-          kubectl apply
-          -f {{ root_app_file }}
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      register: root_app_apply
-
-      changed_when: >
-        'created' in root_app_apply.stdout or
-        'configured' in root_app_apply.stdout
-
-
-    # =====================================================
-    # AGUARDAR ROOT APP
-    # =====================================================
-
-    - name: Aguardar Root Application aparecer
-      ansible.builtin.command:
-        cmd: >
-          kubectl get application
-          root-app
-          -n argocd
-      register: root_app_status
-      retries: 20
-      delay: 3
-      until: root_app_status.rc == 0
-      changed_when: false
-
-
-    # =====================================================
-    # AGUARDAR PROJETO KORP
-    # =====================================================
-
-    - name: Aguardar Application Projeto Korp aparecer
-      ansible.builtin.command:
-        cmd: >
-          kubectl get application
-          projeto-korp
-          -n argocd
-      register: projeto_korp_status
-      retries: 20
-      delay: 3
-      until: projeto_korp_status.rc == 0
-      changed_when: false
-
-
-    # =====================================================
-    # MOSTRAR APPLICATIONS
-    # =====================================================
-
-    - name: Listar Applications do Argo CD
-      ansible.builtin.command:
-        cmd: >
-          kubectl get applications
-          -n argocd
-          -o wide
-      register: argocd_applications
-      changed_when: false
-
-
-    - name: Mostrar Applications
-      ansible.builtin.debug:
-        var: argocd_applications.stdout_lines
-
-
-    # =====================================================
-    # RESULTADO
-    # =====================================================
-
-    - name: Mostrar resultado do GitOps
-      ansible.builtin.debug:
-        msg:
-          - "=============================================="
-          - "ARGO CD GITOPS CONFIGURADO"
-          - ""
-          - "Root Application:"
-          - "root-app"
-          - ""
-          - "Application:"
-          - "projeto-korp"
-          - ""
-          - "Argo CD:"
-          - "https://localhost:8443"
-          - "=============================================="
