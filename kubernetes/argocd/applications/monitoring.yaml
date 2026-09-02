@@ -11,35 +11,16 @@ metadata:
 spec:
   project: default
 
-  sources:
-
-    - repoURL: https://prometheus-community.github.io/helm-charts
-
-      chart: kube-prometheus-stack
-
-      targetRevision: 88.6.3
-
-      helm:
-        releaseName: monitoramento
-
-        valueFiles:
-          - $values/kubernetes/monitoring/values.yaml
-
-
-    - repoURL: https://github.com/DaviPO2001/desafio_devops_korp.git
-
-      targetRevision: main
-
-      ref: values
-
+  source:
+    repoURL: https://github.com/DaviPO2001/desafio_devops_korp.git
+    targetRevision: main
+    path: kubernetes/monitoring
 
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
 
-
   syncPolicy:
-
     automated:
       prune: true
       selfHeal: true
@@ -49,7 +30,6 @@ spec:
 
     retry:
       limit: 10
-
       backoff:
         duration: 10s
         factor: 2

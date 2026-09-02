@@ -399,31 +399,28 @@
       changed_when: false
 
 
-    - name: Verificar se Argo CD ja esta instalado
+    - name: Instalar ou atualizar Argo CD
       ansible.builtin.command:
-        cmd: helm status argocd -n argocd
-      register: argocd_status
-      changed_when: false
-      failed_when: false
-
-
-    - name: Instalar Argo CD
-      ansible.builtin.command:
-        cmd: >-
-          helm install argocd argo/argo-cd
-          --namespace argocd
-          --create-namespace
-          --set server.nodeSelector.kubernetes\.io/hostname=projeto-korp-worker
-          --wait
-          --timeout 5m
+        argv:
+          - helm
+          - upgrade
+          - --install
+          - argocd
+          - argo/argo-cd
+          - --namespace
+          - argocd
+          - --create-namespace
+          - --set-json
+          - 'server.nodeSelector={"kubernetes.io/hostname":"projeto-korp-worker"}'
+          - --wait
+          - --timeout
+          - 10m
       register: argocd_install
-      when: argocd_status.rc != 0
 
 
     - name: Exibir resultado da instalacao do Argo CD
       ansible.builtin.debug:
         var: argocd_install.stdout_lines
-      when: argocd_status.rc != 0
 
 
     - name: Verificar pods do Argo CD
@@ -556,14 +553,6 @@
       changed_when: false
 
 
-    - name: Aguardar Application Monitoring Config aparecer
-      ansible.builtin.command:
-        cmd: kubectl get application monitoring-config -n argocd
-      register: monitoring_config_application_status
-      retries: 40
-      delay: 3
-      until: monitoring_config_application_status.rc == 0
-      changed_when: false
 
 
     # =====================================================
@@ -612,18 +601,6 @@
       changed_when: false
 
 
-    - name: Aguardar Monitoring Config ficar Synced e Healthy
-      ansible.builtin.shell: |
-        SYNC=$(kubectl get application monitoring-config -n argocd -o jsonpath='{.status.sync.status}')
-        HEALTH=$(kubectl get application monitoring-config -n argocd -o jsonpath='{.status.health.status}')
-        echo "${SYNC} ${HEALTH}"
-      register: monitoring_config_health
-      retries: 120
-      delay: 5
-      until:
-        - "'Synced' in monitoring_config_health.stdout"
-        - "'Healthy' in monitoring_config_health.stdout"
-      changed_when: false
 
 
     # =====================================================
@@ -651,7 +628,6 @@
           - "Root Application: root-app"
           - "Application: projeto-korp"
           - "Application: monitoring"
-          - "Application: monitoring-config"
           - ""
           - "Argo CD: https://localhost:8443"
           - "=============================================="
@@ -803,7 +779,7 @@
     - name: Obter NodePort do Grafana
       ansible.builtin.command:
         cmd: >-
-          kubectl get service monitoramento-grafana
+          kubectl get service grafana
           -n monitoring
           -o jsonpath='{.spec.ports[0].nodePort}'
       register: grafana_nodeport
@@ -813,7 +789,7 @@
     - name: Obter NodePort do Prometheus
       ansible.builtin.command:
         cmd: >-
-          kubectl get service monitoramento-kube-prometh-prometheus
+          kubectl get service prometheus
           -n monitoring
           -o jsonpath='{.spec.ports[0].nodePort}'
       register: prometheus_nodeport
@@ -848,34 +824,10 @@
     # CREDENCIAIS INICIAIS DO GRAFANA
     # =====================================================
 
-    - name: Aguardar secret do Grafana
-      ansible.builtin.command:
-        cmd: kubectl get secret monitoramento-grafana -n monitoring
-      register: grafana_secret
-      retries: 60
-      delay: 5
-      until: grafana_secret.rc == 0
-      changed_when: false
-
-
-    - name: Obter usuario inicial do Grafana
-      ansible.builtin.shell: >-
-        kubectl get secret monitoramento-grafana
-        -n monitoring
-        -o jsonpath='{.data.admin-user}'
-        | base64 -d
-      register: grafana_admin_user
-      changed_when: false
-
-
-    - name: Obter senha inicial do Grafana
-      ansible.builtin.shell: >-
-        kubectl get secret monitoramento-grafana
-        -n monitoring
-        -o jsonpath='{.data.admin-password}'
-        | base64 -d
-      register: grafana_admin_password
-      changed_when: false
+    - name: Definir credenciais iniciais do Grafana
+      ansible.builtin.set_fact:
+        grafana_admin_user: "admin"
+        grafana_admin_password: "admin"
 
 
     # =====================================================
@@ -930,8 +882,8 @@
           - "Windows/Host: http://localhost:{{ host_grafana_port }}"
           - "Rede privada: http://{{ worker_ip.stdout }}:{{ grafana_nodeport.stdout }}"
           - "NodePort:     {{ grafana_nodeport.stdout }}"
-          - "Usuario inicial: {{ grafana_admin_user.stdout }}"
-          - "Senha inicial:   {{ grafana_admin_password.stdout }}"
+          - "Usuario inicial: {{ grafana_admin_user }}"
+          - "Senha inicial:   {{ grafana_admin_password }}"
           - ""
           - "--------------------------------------------------------------"
           - "PROMETHEUS"

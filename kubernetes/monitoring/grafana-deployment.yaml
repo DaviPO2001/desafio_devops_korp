@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: grafana
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: grafana
+
+  template:
+    metadata:
+      labels:
+        app: grafana
+
+    spec:
+
+      nodeSelector:
+        kubernetes.io/hostname: projeto-korp-manager
+
+      initContainers:
+
+        - name: preparar-permissoes
+
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+
+          command:
+            - sh
+            - -c
+            - chown -R 472:472 /var/lib/grafana
+
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+
+      containers:
+
+        - name: grafana
+
+          image: grafana/grafana:13.2.1
+          imagePullPolicy: IfNotPresent
+
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: admin
+
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: admin
+
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+
+          ports:
+            - name: http
+              containerPort: 3000
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+
+          volumeMounts:
+
+            - name: data
+              mountPath: /var/lib/grafana
+
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/datasources/prometheus.yaml
+              subPath: datasource.yaml
+
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/dashboards/projeto-korp.yaml
+              subPath: dashboard-provider.yaml
+
+            - name: dashboard
+              mountPath: /var/lib/grafana/dashboards/projeto-korp.json
+              subPath: projeto-korp.json
+
+      volumes:
+
+        - name: data
+          persistentVolumeClaim:
+            claimName: grafana-data
+
+        - name: provisioning
+          configMap:
+            name: grafana-provisioning
+
+        - name: dashboard
+          configMap:
+            name: grafana-dashboard-projeto-korp
