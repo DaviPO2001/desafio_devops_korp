@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: nginx-projeto-korp
+  namespace: projeto-korp
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: nginx-projeto-korp
+
+  template:
+    metadata:
+      labels:
+        app: nginx-projeto-korp
+
+    spec:
+
+      # Mantemos o NGINX no worker para deixar o acesso
+      # pelo Vagrant deterministico neste laboratorio
+      nodeSelector:
+        kubernetes.io/hostname: projeto-korp-worker
+
+      containers:
+        - name: nginx
+          image: nginx:latest
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 80
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
+
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: nginx-config

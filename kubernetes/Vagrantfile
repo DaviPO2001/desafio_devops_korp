@@ -1,0 +1,97 @@
+Vagrant.configure("2") do |config|
+
+  config.vm.box = "debian/bookworm64"
+  config.vm.boot_timeout = 600
+
+
+  # =========================================================
+  # MANAGER
+  # =========================================================
+
+  config.vm.define "manager" do |manager|
+
+    manager.vm.hostname = "projeto-korp-manager"
+
+    manager.vm.network "private_network",
+      ip: "192.168.56.20"
+
+
+    manager.vm.synced_folder "..", "/projeto-korp"
+
+
+    manager.vm.provision "shell",
+      path: "provision.sh"
+
+
+    manager.vm.provider "virtualbox" do |vb|
+
+      vb.memory = "4096"
+      vb.cpus = 2
+
+    end
+
+  end
+
+
+  # =========================================================
+  # WORKER
+  # =========================================================
+
+  config.vm.define "worker" do |worker|
+
+    worker.vm.hostname = "projeto-korp-worker"
+
+    worker.vm.network "private_network",
+      ip: "192.168.56.21"
+
+
+    # =======================================================
+    # ARGO CD
+    # Windows localhost:8443 -> Worker 30443
+    # =======================================================
+
+    worker.vm.network "forwarded_port",
+      guest: 30443,
+      host: 8443
+
+
+    # =======================================================
+    # NGINX / APLICACAO
+    # Windows localhost:8080 -> Worker 30080
+    # =======================================================
+
+    worker.vm.network "forwarded_port",
+      guest: 30080,
+      host: 8080
+
+
+    # =======================================================
+    # GRAFANA
+    # Windows localhost:3000 -> Worker 30300
+    # =======================================================
+
+    worker.vm.network "forwarded_port",
+      guest: 30300,
+      host: 3000
+
+
+    # =======================================================
+    # PROMETHEUS
+    # Windows localhost:9090 -> Worker 30900
+    # =======================================================
+
+    worker.vm.network "forwarded_port",
+      guest: 30900,
+      host: 9090
+
+
+    worker.vm.provider "virtualbox" do |vb|
+
+      vb.memory = "3072"
+      vb.cpus = 2
+
+    end
+
+  end
+
+end

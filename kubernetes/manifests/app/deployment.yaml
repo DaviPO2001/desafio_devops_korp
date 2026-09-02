@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: http-server-projeto-korp
+  namespace: projeto-korp
+
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: http-server-projeto-korp
+
+  template:
+    metadata:
+      labels:
+        app: http-server-projeto-korp
+
+    spec:
+      containers:
+        - name: http-server-projeto-korp
+
+          image: davipo2001/desafio_devops_korp:v1
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 8080
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+
+            limits:
+              cpu: "500m"
+              memory: "128Mi"
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 20

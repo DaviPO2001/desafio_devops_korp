@@ -1,0 +1,170 @@
+# =========================================================
+# KUBE-PROMETHEUS-STACK - PROJETO KORP
+# =========================================================
+
+
+# =========================================================
+# GRAFANA
+# =========================================================
+
+grafana:
+
+  enabled: true
+
+  # Mantem as dashboards prontas do Kubernetes
+  defaultDashboardsEnabled: true
+  defaultDashboardsEditable: true
+  defaultDashboardsTimezone: browser
+
+
+  # -------------------------------------------------------
+  # SERVICE
+  # -------------------------------------------------------
+
+  service:
+    type: NodePort
+    nodePort: 30300
+
+
+  # -------------------------------------------------------
+  # PERSISTENCIA
+  # -------------------------------------------------------
+
+  persistence:
+    enabled: true
+    type: sts
+    storageClassName: local-path
+
+    accessModes:
+      - ReadWriteOnce
+
+    size: 5Gi
+
+
+  # -------------------------------------------------------
+  # SIDECAR - DASHBOARDS
+  # -------------------------------------------------------
+
+  sidecar:
+
+    dashboards:
+      enabled: true
+
+      label: grafana_dashboard
+      labelValue: "1"
+
+      # Permite encontrar dashboards em qualquer namespace
+      searchNamespace: ALL
+
+
+    # -----------------------------------------------------
+    # DATASOURCE PROMETHEUS
+    # -----------------------------------------------------
+
+    datasources:
+      enabled: true
+
+      defaultDatasourceEnabled: true
+      isDefaultDatasource: true
+
+      name: Prometheus
+
+      # UID fixo usado pela dashboard projeto-korp
+      uid: prometheus
+
+
+
+# =========================================================
+# PROMETHEUS
+# =========================================================
+
+prometheus:
+
+  enabled: true
+
+
+  # -------------------------------------------------------
+  # SERVICE
+  # -------------------------------------------------------
+
+  service:
+    type: NodePort
+    nodePort: 30900
+
+
+  prometheusSpec:
+
+    # -----------------------------------------------------
+    # RETENCAO
+    # -----------------------------------------------------
+
+    retention: 30d
+
+
+    # -----------------------------------------------------
+    # SERVICEMONITORS
+    # -----------------------------------------------------
+
+    # Permite descobrir nosso ServiceMonitor
+    # sem exigir o label do release Helm
+    serviceMonitorSelectorNilUsesHelmValues: false
+
+    serviceMonitorSelector: {}
+
+    # Permite procurar ServiceMonitor em outros namespaces
+    serviceMonitorNamespaceSelector: {}
+
+
+    # -----------------------------------------------------
+    # STORAGE
+    # -----------------------------------------------------
+
+    storageSpec:
+
+      volumeClaimTemplate:
+
+        spec:
+
+          storageClassName: local-path
+
+          accessModes:
+            - ReadWriteOnce
+
+          resources:
+
+            requests:
+              storage: 10Gi
+
+
+
+# =========================================================
+# ALERTMANAGER
+# =========================================================
+
+alertmanager:
+
+  enabled: true
+
+  alertmanagerSpec:
+
+    retention: 120h
+
+
+
+# =========================================================
+# NODE EXPORTER
+# =========================================================
+
+prometheus-node-exporter:
+
+  enabled: true
+
+
+
+# =========================================================
+# KUBE STATE METRICS
+# =========================================================
+
+kube-state-metrics:
+
+  enabled: true
