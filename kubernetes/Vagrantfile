@@ -4,38 +4,11 @@ Vagrant.configure("2") do |config|
   config.vm.boot_timeout = 600
 
 
-  # =========================================================
-  # MANAGER
-  # =========================================================
-
-  config.vm.define "manager" do |manager|
-
-    manager.vm.hostname = "projeto-korp-manager"
-
-    manager.vm.network "private_network",
-      ip: "192.168.56.20"
-
-
-    manager.vm.synced_folder "..", "/projeto-korp"
-
-
-    manager.vm.provision "shell",
-      path: "provision.sh"
-
-
-    manager.vm.provider "virtualbox" do |vb|
-
-      vb.memory = "4096"
-      vb.cpus = 2
-
-    end
-
-  end
-
-
-  # =========================================================
+  # ========================================================
   # WORKER
-  # =========================================================
+  # Sobe primeiro para estar disponivel quando o Ansible
+  # for executado a partir do manager.
+  # ========================================================
 
   config.vm.define "worker" do |worker|
 
@@ -44,42 +17,26 @@ Vagrant.configure("2") do |config|
     worker.vm.network "private_network",
       ip: "192.168.56.21"
 
+    # ------------------------------------------------------
+    # PORTAS DE ACESSO PELO WINDOWS/HOST
+    # ------------------------------------------------------
 
-    # =======================================================
-    # ARGO CD
-    # Windows localhost:8443 -> Worker 30443
-    # =======================================================
-
+    # Argo CD
     worker.vm.network "forwarded_port",
       guest: 30443,
       host: 8443
 
-
-    # =======================================================
-    # NGINX / APLICACAO
-    # Windows localhost:8080 -> Worker 30080
-    # =======================================================
-
+    # Aplicacao / NGINX
     worker.vm.network "forwarded_port",
       guest: 30080,
       host: 8080
 
-
-    # =======================================================
-    # GRAFANA
-    # Windows localhost:3000 -> Worker 30300
-    # =======================================================
-
+    # Grafana
     worker.vm.network "forwarded_port",
       guest: 30300,
       host: 3000
 
-
-    # =======================================================
-    # PROMETHEUS
-    # Windows localhost:9090 -> Worker 30900
-    # =======================================================
-
+    # Prometheus
     worker.vm.network "forwarded_port",
       guest: 30900,
       host: 9090
@@ -88,6 +45,39 @@ Vagrant.configure("2") do |config|
     worker.vm.provider "virtualbox" do |vb|
 
       vb.memory = "3072"
+      vb.cpus = 2
+
+    end
+
+  end
+
+
+  # ========================================================
+  # MANAGER / CONTROL PLANE
+  # ========================================================
+
+  config.vm.define "manager" do |manager|
+
+    manager.vm.hostname = "projeto-korp-manager"
+
+    manager.vm.network "private_network",
+      ip: "192.168.56.20"
+
+    # Raiz do repositorio
+    manager.vm.synced_folder "..", "/projeto-korp"
+
+
+    # ------------------------------------------------------
+    # ANSIBLE
+    # ------------------------------------------------------
+
+    manager.vm.provision "shell",
+      path: "provision.sh"
+
+
+    manager.vm.provider "virtualbox" do |vb|
+
+      vb.memory = "4096"
       vb.cpus = 2
 
     end

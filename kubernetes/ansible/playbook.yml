@@ -474,28 +474,6 @@
       changed_when: false
 
 
-    - name: Obter senha inicial do Argo CD
-      ansible.builtin.shell: >-
-        kubectl -n argocd
-        get secret argocd-initial-admin-secret
-        -o jsonpath='{.data.password}'
-        | base64 -d
-      register: argocd_admin_password
-      changed_when: false
-
-
-    - name: Mostrar dados de acesso do Argo CD
-      ansible.builtin.debug:
-        msg:
-          - "=============================================="
-          - "ARGO CD DISPONIVEL"
-          - "URL: https://localhost:8443"
-          - "Usuario: admin"
-          - "Senha: {{ argocd_admin_password.stdout }}"
-          - "=============================================="
-
-
-
 # =========================================================
 # 4. ARGO CD - ROOT APPLICATION / GITOPS
 # =========================================================
@@ -578,6 +556,16 @@
       changed_when: false
 
 
+    - name: Aguardar Application Monitoring Config aparecer
+      ansible.builtin.command:
+        cmd: kubectl get application monitoring-config -n argocd
+      register: monitoring_config_application_status
+      retries: 40
+      delay: 3
+      until: monitoring_config_application_status.rc == 0
+      changed_when: false
+
+
     # =====================================================
     # AGUARDAR NAMESPACE DA APLICACAO
     # =====================================================
@@ -589,6 +577,52 @@
       retries: 40
       delay: 3
       until: projeto_korp_namespace.rc == 0
+      changed_when: false
+
+
+    # =====================================================
+    # AGUARDAR GITOPS FICAR SAUDAVEL
+    # =====================================================
+
+    - name: Aguardar Projeto Korp ficar Synced e Healthy
+      ansible.builtin.shell: |
+        SYNC=$(kubectl get application projeto-korp -n argocd -o jsonpath='{.status.sync.status}')
+        HEALTH=$(kubectl get application projeto-korp -n argocd -o jsonpath='{.status.health.status}')
+        echo "${SYNC} ${HEALTH}"
+      register: projeto_korp_health
+      retries: 120
+      delay: 5
+      until:
+        - "'Synced' in projeto_korp_health.stdout"
+        - "'Healthy' in projeto_korp_health.stdout"
+      changed_when: false
+
+
+    - name: Aguardar Monitoring ficar Synced e Healthy
+      ansible.builtin.shell: |
+        SYNC=$(kubectl get application monitoring -n argocd -o jsonpath='{.status.sync.status}')
+        HEALTH=$(kubectl get application monitoring -n argocd -o jsonpath='{.status.health.status}')
+        echo "${SYNC} ${HEALTH}"
+      register: monitoring_health
+      retries: 180
+      delay: 5
+      until:
+        - "'Synced' in monitoring_health.stdout"
+        - "'Healthy' in monitoring_health.stdout"
+      changed_when: false
+
+
+    - name: Aguardar Monitoring Config ficar Synced e Healthy
+      ansible.builtin.shell: |
+        SYNC=$(kubectl get application monitoring-config -n argocd -o jsonpath='{.status.sync.status}')
+        HEALTH=$(kubectl get application monitoring-config -n argocd -o jsonpath='{.status.health.status}')
+        echo "${SYNC} ${HEALTH}"
+      register: monitoring_config_health
+      retries: 120
+      delay: 5
+      until:
+        - "'Synced' in monitoring_config_health.stdout"
+        - "'Healthy' in monitoring_config_health.stdout"
       changed_when: false
 
 
@@ -617,6 +651,7 @@
           - "Root Application: root-app"
           - "Application: projeto-korp"
           - "Application: monitoring"
+          - "Application: monitoring-config"
           - ""
           - "Argo CD: https://localhost:8443"
           - "=============================================="
@@ -624,282 +659,7 @@
 
 
 # =========================================================
-# 5. MONITORAMENTO - KUBE-PROMETHEUS-STACK
-#
-# TEMPORARIO:
-# O stack ainda e instalado pelo Ansible enquanto ocorre
-# a migracao completa para gerenciamento pelo Argo CD.
-# =========================================================
-
-- name: Instalar stack de monitoramento
-  hosts: manager
-  become: true
-
-  environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-
-  vars:
-    monitoring_namespace: "monitoring"
-
-    monitoring_values: "/projeto-korp/kubernetes/monitoring/values.yaml"
-
-    servicemonitor_file: "/projeto-korp/kubernetes/monitoring/servicemonitor.yaml"
-
-    dashboard_file: "/projeto-korp/kubernetes/monitoring/dashboards/projeto-korp.json"
-
-    helm_release: "monitoramento"
-
-    monitoring_chart_version: "88.6.3"
-
-  tasks:
-
-    # =====================================================
-    # VALIDAR ARQUIVOS
-    # =====================================================
-
-    - name: Verificar values.yaml
-      ansible.builtin.stat:
-        path: "{{ monitoring_values }}"
-      register: monitoring_values_file
-
-
-    - name: Validar values.yaml
-      ansible.builtin.assert:
-        that:
-          - monitoring_values_file.stat.exists
-        fail_msg: "Arquivo {{ monitoring_values }} nao encontrado."
-
-
-    - name: Verificar ServiceMonitor
-      ansible.builtin.stat:
-        path: "{{ servicemonitor_file }}"
-      register: monitoring_servicemonitor_file
-
-
-    - name: Validar ServiceMonitor
-      ansible.builtin.assert:
-        that:
-          - monitoring_servicemonitor_file.stat.exists
-        fail_msg: "Arquivo {{ servicemonitor_file }} nao encontrado."
-
-
-    - name: Verificar dashboard projeto-korp
-      ansible.builtin.stat:
-        path: "{{ dashboard_file }}"
-      register: projeto_dashboard
-
-
-    - name: Validar dashboard projeto-korp
-      ansible.builtin.assert:
-        that:
-          - projeto_dashboard.stat.exists
-        fail_msg: "Dashboard {{ dashboard_file }} nao encontrada."
-
-
-    # =====================================================
-    # REPOSITORIO HELM
-    # =====================================================
-
-    - name: Adicionar repositorio prometheus-community
-      ansible.builtin.command:
-        cmd: >-
-          helm repo add
-          prometheus-community
-          https://prometheus-community.github.io/helm-charts
-      register: prometheus_repo
-      changed_when: "'has been added' in prometheus_repo.stdout"
-      failed_when:
-        - prometheus_repo.rc != 0
-        - "'already exists' not in prometheus_repo.stderr"
-
-
-    - name: Atualizar repositorios Helm
-      ansible.builtin.command:
-        cmd: helm repo update
-      changed_when: false
-
-
-    # =====================================================
-    # NAMESPACE
-    # =====================================================
-
-    - name: Criar namespace monitoring
-      ansible.builtin.command:
-        cmd: >-
-          kubectl create namespace
-          {{ monitoring_namespace }}
-          --dry-run=client
-          -o yaml
-      register: monitoring_namespace_yaml
-      changed_when: false
-
-
-    - name: Aplicar namespace monitoring
-      ansible.builtin.shell: |
-        echo '{{ monitoring_namespace_yaml.stdout }}' | kubectl apply -f -
-      register: monitoring_namespace_apply
-      changed_when: >
-        'created' in monitoring_namespace_apply.stdout or
-        'configured' in monitoring_namespace_apply.stdout
-
-
-    # =====================================================
-    # KUBE-PROMETHEUS-STACK
-    # =====================================================
-
-    - name: Instalar ou atualizar kube-prometheus-stack
-      ansible.builtin.command:
-        cmd: >-
-          helm upgrade --install
-          {{ helm_release }}
-          prometheus-community/kube-prometheus-stack
-          --version {{ monitoring_chart_version }}
-          --namespace {{ monitoring_namespace }}
-          --create-namespace
-          -f {{ monitoring_values }}
-          --wait
-          --timeout 10m
-      register: monitoring_install
-
-
-    # =====================================================
-    # SERVICEMONITOR PROJETO KORP
-    # =====================================================
-
-    - name: Aplicar ServiceMonitor da aplicacao
-      ansible.builtin.command:
-        cmd: >-
-          kubectl apply
-          -f {{ servicemonitor_file }}
-      register: servicemonitor_apply
-      changed_when: >
-        'created' in servicemonitor_apply.stdout or
-        'configured' in servicemonitor_apply.stdout
-
-
-    # =====================================================
-    # DASHBOARD PROJETO KORP
-    # =====================================================
-
-    - name: Criar ConfigMap da dashboard Projeto Korp
-      ansible.builtin.shell: >-
-        kubectl create configmap projeto-korp-dashboard
-        -n {{ monitoring_namespace }}
-        --from-file=projeto-korp.json={{ dashboard_file }}
-        --dry-run=client
-        -o yaml
-        |
-        kubectl apply -f -
-      register: dashboard_configmap
-      changed_when: >
-        'created' in dashboard_configmap.stdout or
-        'configured' in dashboard_configmap.stdout
-
-
-    - name: Adicionar label para Grafana detectar dashboard
-      ansible.builtin.command:
-        cmd: >-
-          kubectl label configmap
-          projeto-korp-dashboard
-          -n {{ monitoring_namespace }}
-          grafana_dashboard=1
-          --overwrite
-      changed_when: false
-
-
-    # =====================================================
-    # VALIDACAO
-    # =====================================================
-
-    - name: Aguardar pods do monitoramento
-      ansible.builtin.command:
-        cmd: >-
-          kubectl wait
-          --for=condition=Ready
-          pod
-          --all
-          -n {{ monitoring_namespace }}
-          --timeout=300s
-      changed_when: false
-
-
-    - name: Verificar pods do monitoramento
-      ansible.builtin.command:
-        cmd: kubectl get pods -n {{ monitoring_namespace }} -o wide
-      register: monitoring_pods
-      changed_when: false
-
-
-    - name: Mostrar pods do monitoramento
-      ansible.builtin.debug:
-        var: monitoring_pods.stdout_lines
-
-
-    - name: Verificar Services do monitoramento
-      ansible.builtin.command:
-        cmd: kubectl get svc -n {{ monitoring_namespace }}
-      register: monitoring_services
-      changed_when: false
-
-
-    - name: Mostrar Services do monitoramento
-      ansible.builtin.debug:
-        var: monitoring_services.stdout_lines
-
-
-    - name: Verificar ServiceMonitor Projeto Korp
-      ansible.builtin.command:
-        cmd: kubectl get servicemonitor -n projeto-korp
-      register: servicemonitor_result
-      changed_when: false
-
-
-    - name: Mostrar ServiceMonitor
-      ansible.builtin.debug:
-        var: servicemonitor_result.stdout_lines
-
-
-    # =====================================================
-    # SENHA DO GRAFANA
-    # =====================================================
-
-    - name: Obter senha inicial do Grafana
-      ansible.builtin.shell: >-
-        kubectl get secret
-        {{ helm_release }}-grafana
-        -n {{ monitoring_namespace }}
-        -o jsonpath='{.data.admin-password}'
-        |
-        base64 -d
-      register: grafana_password
-      changed_when: false
-
-
-    - name: Mostrar dados do monitoramento
-      ansible.builtin.debug:
-        msg:
-          - "=============================================="
-          - "MONITORAMENTO DISPONIVEL"
-          - ""
-          - "Grafana:"
-          - "URL: http://localhost:3000"
-          - "Usuario: admin"
-          - "Senha: {{ grafana_password.stdout }}"
-          - ""
-          - "Prometheus:"
-          - "URL: http://localhost:9090"
-          - ""
-          - "Dashboard customizada:"
-          - "projeto-korp"
-          - ""
-          - "ServiceMonitor:"
-          - "http-server-projeto-korp"
-          - "=============================================="
-
-
-
-# =========================================================
-# 6. K6 - TESTE DE CARGA NO MANAGER
+# 5. K6 - TESTE DE CARGA NO MANAGER
 # =========================================================
 
 - name: Instalar k6 no manager
@@ -973,3 +733,214 @@
     - name: Mostrar versao do k6
       ansible.builtin.debug:
         var: k6_version.stdout
+
+
+# =========================================================
+# 6. RESUMO FINAL - ACESSOS, IPS, PORTAS E CREDENCIAIS
+# =========================================================
+
+- name: Mostrar resumo final do ambiente
+  hosts: manager
+  become: true
+
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+  vars:
+    host_argo_port: "8443"
+    host_app_port: "8080"
+    host_grafana_port: "3000"
+    host_prometheus_port: "9090"
+
+  tasks:
+
+    # =====================================================
+    # IPS DOS NODES
+    # =====================================================
+
+    - name: Obter IP interno do manager
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get node projeto-korp-manager
+          -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}'
+      register: manager_ip
+      changed_when: false
+
+
+    - name: Obter IP interno do worker
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get node projeto-korp-worker
+          -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}'
+      register: worker_ip
+      changed_when: false
+
+
+    # =====================================================
+    # NODEPORTS
+    # =====================================================
+
+    - name: Obter NodePort do Argo CD
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get service argocd-server
+          -n argocd
+          -o jsonpath='{.spec.ports[?(@.port==443)].nodePort}'
+      register: argocd_nodeport_final
+      changed_when: false
+
+
+    - name: Obter NodePort do NGINX
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get service nginx-projeto-korp
+          -n projeto-korp
+          -o jsonpath='{.spec.ports[0].nodePort}'
+      register: nginx_nodeport
+      changed_when: false
+
+
+    - name: Obter NodePort do Grafana
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get service monitoramento-grafana
+          -n monitoring
+          -o jsonpath='{.spec.ports[0].nodePort}'
+      register: grafana_nodeport
+      changed_when: false
+
+
+    - name: Obter NodePort do Prometheus
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get service monitoramento-kube-prometh-prometheus
+          -n monitoring
+          -o jsonpath='{.spec.ports[0].nodePort}'
+      register: prometheus_nodeport
+      changed_when: false
+
+
+    # =====================================================
+    # CREDENCIAIS INICIAIS DO ARGO CD
+    # =====================================================
+
+    - name: Aguardar secret inicial do Argo CD
+      ansible.builtin.command:
+        cmd: kubectl get secret argocd-initial-admin-secret -n argocd
+      register: argocd_initial_secret
+      retries: 30
+      delay: 3
+      until: argocd_initial_secret.rc == 0
+      changed_when: false
+
+
+    - name: Obter senha inicial do Argo CD
+      ansible.builtin.shell: >-
+        kubectl get secret argocd-initial-admin-secret
+        -n argocd
+        -o jsonpath='{.data.password}'
+        | base64 -d
+      register: argocd_initial_password
+      changed_when: false
+
+
+    # =====================================================
+    # CREDENCIAIS INICIAIS DO GRAFANA
+    # =====================================================
+
+    - name: Aguardar secret do Grafana
+      ansible.builtin.command:
+        cmd: kubectl get secret monitoramento-grafana -n monitoring
+      register: grafana_secret
+      retries: 60
+      delay: 5
+      until: grafana_secret.rc == 0
+      changed_when: false
+
+
+    - name: Obter usuario inicial do Grafana
+      ansible.builtin.shell: >-
+        kubectl get secret monitoramento-grafana
+        -n monitoring
+        -o jsonpath='{.data.admin-user}'
+        | base64 -d
+      register: grafana_admin_user
+      changed_when: false
+
+
+    - name: Obter senha inicial do Grafana
+      ansible.builtin.shell: >-
+        kubectl get secret monitoramento-grafana
+        -n monitoring
+        -o jsonpath='{.data.admin-password}'
+        | base64 -d
+      register: grafana_admin_password
+      changed_when: false
+
+
+    # =====================================================
+    # STATUS FINAL
+    # =====================================================
+
+    - name: Obter status final das Applications
+      ansible.builtin.command:
+        cmd: kubectl get applications -n argocd
+      register: applications_final
+      changed_when: false
+
+
+    - name: Mostrar status final das Applications
+      ansible.builtin.debug:
+        var: applications_final.stdout_lines
+
+
+    # =====================================================
+    # RESUMO DE ACESSO
+    # =====================================================
+
+    - name: Mostrar acessos finais do ambiente
+      ansible.builtin.debug:
+        msg:
+          - "=============================================================="
+          - "PROJETO KORP - AMBIENTE CRIADO COM SUCESSO"
+          - "=============================================================="
+          - ""
+          - "NODES KUBERNETES"
+          - "Manager: {{ manager_ip.stdout }}"
+          - "Worker:  {{ worker_ip.stdout }}"
+          - ""
+          - "--------------------------------------------------------------"
+          - "APLICACAO PROJETO KORP"
+          - "Windows/Host: http://localhost:{{ host_app_port }}/projeto-korp"
+          - "Health:       http://localhost:{{ host_app_port }}/health"
+          - "Metrics:      http://localhost:{{ host_app_port }}/metrics"
+          - "Rede privada: http://{{ worker_ip.stdout }}:{{ nginx_nodeport.stdout }}/projeto-korp"
+          - "NodePort:     {{ nginx_nodeport.stdout }}"
+          - ""
+          - "--------------------------------------------------------------"
+          - "ARGO CD"
+          - "Windows/Host: https://localhost:{{ host_argo_port }}"
+          - "Rede privada: https://{{ worker_ip.stdout }}:{{ argocd_nodeport_final.stdout }}"
+          - "NodePort:     {{ argocd_nodeport_final.stdout }}"
+          - "Usuario inicial: admin"
+          - "Senha inicial:   {{ argocd_initial_password.stdout }}"
+          - ""
+          - "--------------------------------------------------------------"
+          - "GRAFANA"
+          - "Windows/Host: http://localhost:{{ host_grafana_port }}"
+          - "Rede privada: http://{{ worker_ip.stdout }}:{{ grafana_nodeport.stdout }}"
+          - "NodePort:     {{ grafana_nodeport.stdout }}"
+          - "Usuario inicial: {{ grafana_admin_user.stdout }}"
+          - "Senha inicial:   {{ grafana_admin_password.stdout }}"
+          - ""
+          - "--------------------------------------------------------------"
+          - "PROMETHEUS"
+          - "Windows/Host: http://localhost:{{ host_prometheus_port }}"
+          - "Rede privada: http://{{ worker_ip.stdout }}:{{ prometheus_nodeport.stdout }}"
+          - "NodePort:     {{ prometheus_nodeport.stdout }}"
+          - ""
+          - "--------------------------------------------------------------"
+          - "K6"
+          - "Instalado no manager: {{ manager_ip.stdout }}"
+          - ""
+          - "=============================================================="
