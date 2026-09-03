@@ -1,0 +1,922 @@
+Projeto Korp — Desafio DevOps
+
+Este repositório contém a implementação do Desafio Técnico DevOps — Projeto Korp.
+
+A solução principal, localizada na raiz do repositório, atende aos requisitos solicitados utilizando Golang, Docker, Docker Compose, NGINX, Prometheus, Grafana e Ansible.
+
+Além da implementação obrigatória, foi criada a pasta kubernetes/ como uma extensão adicional do projeto, reproduzindo a mesma aplicação e os mesmos conceitos em um ambiente Kubernetes com K3s, Argo CD, GitOps, HPA, CI/CD e k6.
+
+A implementação Kubernetes é complementar e não substitui a solução principal solicitada no desafio.
+
+Sumário
+
+Objetivo
+
+Arquitetura principal — Docker
+
+Tecnologias utilizadas
+
+Estrutura do projeto
+
+Aplicação Golang
+
+Execução da solução principal
+
+Testes e validações
+
+Monitoramento e observabilidade
+
+Automação com Ansible
+
+Extensão Kubernetes
+
+CI/CD e GitOps
+
+Teste de carga e HPA
+
+Conclusão
+
+Objetivo
+
+O projeto foi desenvolvido para demonstrar conhecimentos em:
+
+desenvolvimento de um serviço HTTP em Golang;
+
+criação de imagens Docker;
+
+comunicação entre containers por rede bridge;
+
+proxy reverso com NGINX;
+
+orquestração local com Docker Compose;
+
+monitoramento utilizando Prometheus;
+
+visualização de métricas com Grafana;
+
+provisionamento automatizado com Ansible;
+
+infraestrutura reproduzível com Vagrant;
+
+e, como evolução adicional, Kubernetes, GitOps e CI/CD.
+
+Arquitetura principal — Docker
+
+A solução solicitada no desafio utiliza a seguinte arquitetura:
+
+flowchart LR
+    U[Cliente] -->|HTTP :80| N[NGINX]
+    N -->|Proxy reverso :8080| A[http-server-projeto-korp]
+    P[Prometheus] -->|Scrape /metrics :8080| A
+    G[Grafana] --> P
+
+    subgraph Docker Network
+        N
+        A
+        P
+        G
+    end
+
+O container da aplicação não publica a porta 8080 diretamente no host.
+
+O acesso externo é realizado pelo NGINX, que recebe as requisições na porta 80 e as encaminha para:
+
+http-server-projeto-korp:8080
+
+Todos os containers se comunicam através da rede bridge:
+
+projeto-korp-network
+
+Tecnologias utilizadas
+
+Solução principal
+
+Golang
+
+Docker
+
+Docker Compose
+
+NGINX
+
+Prometheus
+
+Grafana
+
+Ansible
+
+Vagrant
+
+Debian Linux
+
+Extensão Kubernetes
+
+Kubernetes / K3s
+
+containerd
+
+Flannel
+
+Argo CD
+
+GitOps
+
+GitHub Actions
+
+Docker Hub
+
+Horizontal Pod Autoscaler
+
+Prometheus
+
+Grafana
+
+node-exporter
+
+kube-state-metrics
+
+k6
+
+Helm
+
+Vagrant
+
+Ansible
+
+Estrutura do projeto
+
+desafio_devops_korp/
+│
+├── .github/
+│   └── workflows/
+│       └── ci-cd.yml
+│
+├── ansible/
+│   ├── inventory.ini
+│   └── playbook.yml
+│
+├── grafana/
+│   ├── dashboards/
+│   └── provisioning/
+│
+├── nginx/
+│   └── http-server-projeto-korp.conf
+│
+├── prometheus/
+│   └── prometheus.yml
+│
+├── kubernetes/
+│   ├── ansible/
+│   ├── argocd/
+│   ├── manifests/
+│   ├── monitoring/
+│   ├── teste-de-carga/
+│   ├── Vagrantfile
+│   └── provision.sh
+│
+├── Dockerfile
+├── Vagrantfile
+├── docker-compose.yml
+├── go.mod
+├── go.sum
+├── main.go
+└── provision.sh
+
+A raiz do repositório corresponde à implementação solicitada no desafio.
+
+A pasta kubernetes/ contém a implementação adicional.
+
+Aplicação Golang
+
+O serviço se chama:
+
+http-server-projeto-korp
+
+e escuta na porta:
+
+8080
+
+Endpoint principal
+
+GET /projeto-korp
+
+Exemplo de resposta:
+
+{
+  "nome": "Projeto Korp",
+  "horario": "2026-09-02T23:00:00Z"
+}
+
+O valor de horario é gerado dinamicamente em UTC a cada requisição.
+
+Health check
+
+Foi adicionado também:
+
+GET /health
+
+Resposta:
+
+OK
+
+Esse endpoint foi incluído como melhoria para facilitar verificações de disponibilidade.
+
+Métricas Prometheus
+
+As métricas são disponibilizadas em:
+
+GET /metrics
+
+Além das métricas padrão do cliente Prometheus, a aplicação possui o contador:
+
+projeto_korp_http_requests_total
+
+Ele registra a quantidade de requisições recebidas pelo endpoint /projeto-korp.
+
+Dockerfile
+
+A aplicação utiliza um Dockerfile multi-stage.
+
+Na primeira etapa é realizado o build da aplicação Golang.
+
+Na segunda etapa apenas o binário compilado é copiado para a imagem de execução.
+
+Fluxo simplificado:
+
+golang:1.25-alpine
+        |
+        | go build
+        v
+http-server-projeto-korp
+        |
+        v
+   alpine:latest
+
+Isso mantém a imagem final separada do ambiente utilizado para compilação.
+
+Execução da solução principal
+
+Pré-requisitos no computador host
+
+Para utilizar a VM fornecida no projeto:
+
+VirtualBox
+
+Vagrant
+
+A VM utiliza Debian Bookworm.
+
+1. Criar a VM
+
+Na raiz do projeto:
+
+vagrant up
+
+O provisionamento inicial instala o Ansible dentro da VM.
+
+2. Entrar na VM
+
+vagrant ssh
+
+3. Executar o playbook Ansible
+
+Dentro da VM:
+
+cd /vagrant
+
+Execute:
+
+ansible-playbook \
+  -i ansible/inventory.ini \
+  ansible/playbook.yml \
+  --ask-become-pass
+
+Caso seja solicitada a senha do usuário padrão da VM Vagrant:
+
+vagrant
+
+O playbook realiza automaticamente:
+
+instalação das dependências do Docker;
+
+configuração do repositório oficial do Docker;
+
+instalação do Docker Engine e Docker Compose;
+
+criação do diretório do projeto;
+
+cópia dos arquivos necessários;
+
+criação da rede Docker bridge;
+
+build da imagem da aplicação;
+
+execução dos containers com Docker Compose;
+
+configuração do NGINX;
+
+configuração do Prometheus;
+
+provisionamento do Grafana;
+
+validação HTTP da aplicação;
+
+exibição da resposta final no console.
+
+Dessa forma, o ambiente solicitado no desafio é provisionado através de um único comando Ansible.
+
+Testes e validações
+
+Os comandos abaixo podem ser executados dentro da VM da solução principal.
+
+Verificar containers
+
+sudo docker ps
+
+Devem aparecer os containers da aplicação, NGINX, Prometheus e Grafana.
+
+Testar endpoint principal
+
+curl http://localhost:80/projeto-korp
+
+Resposta esperada:
+
+{
+  "nome": "Projeto Korp",
+  "horario": "<horario-atual-em-UTC>"
+}
+
+Testar health check
+
+curl http://localhost:80/health
+
+Resposta:
+
+OK
+
+Validar que a aplicação não está publicada diretamente no host
+
+curl http://localhost:8080/projeto-korp
+
+Esse acesso deve falhar dentro da VM, pois o container da aplicação não possui publicação direta da porta 8080.
+
+O acesso deve ocorrer através do NGINX.
+
+Entrar diretamente no container da aplicação
+
+sudo docker exec -it http-server-projeto-korp sh
+
+Dentro do container:
+
+wget -qO- http://localhost:8080/projeto-korp
+
+Isso demonstra que a aplicação está ouvindo internamente na porta 8080.
+
+Verificar a rede Docker
+
+sudo docker network inspect projeto-korp-network
+
+O resultado permite verificar os containers conectados à mesma rede bridge.
+
+Verificar métricas
+
+curl http://localhost:80/metrics
+
+Para localizar apenas a métrica customizada:
+
+curl http://localhost:80/metrics | grep projeto_korp_http_requests_total
+
+Acesso pelo host
+
+A VM principal utiliza o IP privado:
+
+192.168.1.3
+
+Aplicação:
+
+http://192.168.1.3/projeto-korp
+
+Grafana:
+
+http://localhost:3000
+
+Prometheus:
+
+http://localhost:9090
+
+Monitoramento e observabilidade
+
+Prometheus
+
+O Prometheus coleta as métricas diretamente da aplicação:
+
+http-server-projeto-korp:8080
+
+O intervalo de coleta utilizado é de:
+
+5 segundos
+
+A disponibilidade do serviço pode ser observada pela própria coleta do Prometheus e pelo endpoint /health.
+
+Grafana
+
+O Grafana possui provisionamento automático de:
+
+datasource Prometheus;
+
+provider de dashboards;
+
+dashboard do Projeto Korp.
+
+Isso foi implementado como melhoria em relação ao requisito mínimo, que permitia a criação manual do dashboard.
+
+Primeiro acesso:
+
+Usuário: admin
+Senha: admin
+
+O dashboard permite acompanhar métricas relacionadas ao comportamento e disponibilidade da aplicação.
+
+Automação com Ansible
+
+O arquivo principal de automação é:
+
+ansible/playbook.yml
+
+O inventário está em:
+
+ansible/inventory.ini
+
+A automação foi projetada para preparar um ambiente Linux limpo e deixá-lo pronto para execução da aplicação.
+
+O playbook também executa uma requisição HTTP ao final do processo para validar automaticamente se o ambiente foi criado corretamente.
+
+Extensão Kubernetes
+
+Além dos requisitos solicitados, foi criada uma segunda implementação na pasta:
+
+kubernetes/
+
+Essa implementação mantém a mesma aplicação, NGINX e stack de monitoramento, mas utiliza Kubernetes como plataforma de orquestração.
+
+A ideia foi demonstrar como a solução poderia evoluir de:
+
+Docker Compose
+      |
+      v
+Kubernetes + GitOps + CI/CD
+
+sem substituir a implementação obrigatória do desafio.
+
+Arquitetura Kubernetes
+
+flowchart TD
+    GH[GitHub] --> GA[GitHub Actions]
+    GA --> DH[Docker Hub]
+    GA -->|Atualiza deployment.yaml| GH
+
+    GH --> ARGO[Argo CD]
+    ARGO --> K3S[K3s Cluster]
+
+    subgraph K3s Cluster
+        M[Manager / Control Plane]
+        W[Worker]
+
+        N[NGINX]
+        APP[Aplicação Golang]
+        PROM[Prometheus]
+        GRAF[Grafana]
+        KSM[kube-state-metrics]
+        NE[node-exporter]
+
+        N --> APP
+        PROM --> APP
+        PROM --> KSM
+        PROM --> NE
+        GRAF --> PROM
+    end
+
+    ARGO --> N
+    ARGO --> APP
+    ARGO --> PROM
+    ARGO --> GRAF
+
+Cluster
+
+O ambiente é composto por duas VMs:
+
+Nó
+
+IP
+
+Função
+
+projeto-korp-manager
+
+192.168.56.20
+
+K3s Server / Control Plane
+
+projeto-korp-worker
+
+192.168.56.21
+
+K3s Agent / Worker
+
+A rede do cluster utiliza Flannel configurado sobre a interface privada das VMs.
+
+Componentes adicionais
+
+A extensão Kubernetes inclui:
+
+K3s;
+
+Flannel;
+
+Argo CD;
+
+App of Apps / Root Application;
+
+NGINX;
+
+Prometheus;
+
+Grafana;
+
+node-exporter;
+
+kube-state-metrics;
+
+PersistentVolumeClaims;
+
+Horizontal Pod Autoscaler;
+
+k6;
+
+GitHub Actions;
+
+Docker Hub;
+
+GitOps.
+
+Executando a extensão Kubernetes
+
+Entre na pasta:
+
+cd kubernetes
+
+Execute:
+
+vagrant up
+
+O fluxo automatizado é:
+
+Vagrant
+  |
+  v
+Criação das VMs
+  |
+  v
+Ansible
+  |
+  +--> K3s Server
+  +--> K3s Worker
+  +--> Flannel
+  +--> Helm
+  +--> Argo CD
+  +--> k6
+  |
+  v
+Root Application
+  |
+  v
+Argo CD / GitOps
+  |
+  +--> Aplicação
+  +--> NGINX
+  +--> Prometheus
+  +--> Grafana
+  +--> node-exporter
+  +--> kube-state-metrics
+
+Ao final do playbook são exibidos os acessos e o status das Applications do Argo CD.
+
+Acessos Kubernetes pelo host
+
+Para evitar conflito com as portas utilizadas pela implementação Docker, a solução Kubernetes utiliza portas diferentes no host.
+
+Serviço
+
+URL
+
+Aplicação
+
+http://localhost:1001/projeto-korp
+
+Health
+
+http://localhost:1001/health
+
+Metrics
+
+http://localhost:1001/metrics
+
+Argo CD
+
+https://localhost:1000
+
+Grafana
+
+http://localhost:1002
+
+Prometheus
+
+http://localhost:1003
+
+Através da rede privada:
+
+Serviço
+
+Endereço
+
+Aplicação / NGINX
+
+http://192.168.56.21:30080/projeto-korp
+
+Argo CD
+
+https://192.168.56.21:30443
+
+Grafana
+
+http://192.168.56.21:30300
+
+Prometheus
+
+http://192.168.56.21:30900
+
+CI/CD e GitOps
+
+O pipeline está localizado em:
+
+.github/workflows/ci-cd.yml
+
+Quando arquivos da aplicação são alterados na branch main, o GitHub Actions executa:
+
+Commit
+  |
+  v
+go test
+  |
+  v
+go vet
+  |
+  v
+Docker Build
+  |
+  v
+Push Docker Hub
+  |
+  v
+Atualização do deployment.yaml
+  |
+  v
+Commit automático
+  |
+  v
+Argo CD detecta alteração
+  |
+  v
+Auto Sync
+  |
+  v
+Rolling Update Kubernetes
+
+As imagens utilizam uma tag baseada no SHA curto do commit, evitando depender apenas da tag latest.
+
+O Argo CD utiliza sincronização automatizada com prune e selfHeal.
+
+Dessa forma, o estado do cluster é reconciliado com o estado definido no Git.
+
+HPA
+
+A aplicação possui Horizontal Pod Autoscaler.
+
+Configuração:
+
+mínimo: 2 pods
+máximo: 10 pods
+métrica: CPU
+target: 60%
+
+Quando a utilização de CPU aumenta, o Kubernetes pode criar novas réplicas automaticamente.
+
+Após a redução da carga, o HPA pode diminuir novamente a quantidade de pods.
+
+Teste de carga e HPA
+
+O script está em:
+
+kubernetes/teste-de-carga/k6.js
+
+O teste utiliza estágios progressivos de carga até chegar a:
+
+200 VUs
+
+Exemplo de execução a partir do manager:
+
+k6 run /projeto-korp/kubernetes/teste-de-carga/k6.js
+
+Durante o teste, o comportamento pode ser acompanhado com:
+
+kubectl get hpa -n projeto-korp -w
+
+E:
+
+kubectl get pods -n projeto-korp -w
+
+Também é possível acompanhar CPU, memória, disponibilidade e requisições pelo Grafana.
+
+Principais melhorias implementadas
+
+Além dos requisitos mínimos do desafio, o projeto inclui:
+
+endpoint /health;
+
+métricas Prometheus nativas na aplicação;
+
+contador customizado de requisições;
+
+Grafana provisionado automaticamente;
+
+dashboard versionado no Git;
+
+Vagrant para reprodução do ambiente;
+
+Dockerfile multi-stage;
+
+implementação Kubernetes completa;
+
+cluster K3s com manager e worker;
+
+validação automatizada da rede Flannel;
+
+validação automatizada de DNS do Kubernetes;
+
+Argo CD;
+
+padrão App of Apps;
+
+GitOps;
+
+CI/CD com GitHub Actions;
+
+imagens versionadas por commit;
+
+HPA;
+
+persistent storage para monitoramento;
+
+node-exporter;
+
+kube-state-metrics;
+
+testes de carga com k6.
+
+Comandos úteis — Docker
+
+sudo docker ps
+
+sudo docker network inspect projeto-korp-network
+
+curl http://localhost:80/projeto-korp
+
+curl http://localhost:80/health
+
+curl http://localhost:80/metrics
+
+sudo docker exec -it http-server-projeto-korp sh
+
+Comandos úteis — Kubernetes
+
+Entrar no manager:
+
+vagrant ssh manager
+
+Listar nodes:
+
+kubectl get nodes -o wide
+
+Listar pods:
+
+kubectl get pods -A
+
+Aplicação:
+
+kubectl get pods -n projeto-korp -o wide
+
+Monitoramento:
+
+kubectl get pods -n monitoring
+
+HPA:
+
+kubectl get hpa -n projeto-korp
+
+Argo CD:
+
+kubectl get applications -n argocd
+
+Services:
+
+kubectl get svc -A
+
+Decisões técnicas
+
+Por que NGINX?
+
+O NGINX funciona como ponto único de entrada da aplicação.
+
+A porta 8080 do serviço Golang permanece interna à rede Docker, enquanto o NGINX publica a porta 80.
+
+Isso reduz a exposição direta do serviço e separa a camada de aplicação da camada de entrada.
+
+Por que Prometheus e Grafana?
+
+O Prometheus foi utilizado para coleta e armazenamento das métricas.
+
+O Grafana fornece a camada de visualização, permitindo acompanhar o comportamento da aplicação através de dashboards.
+
+Por que Ansible?
+
+O Ansible permite que todo o processo de configuração seja reproduzível.
+
+Em vez de configurar manualmente Docker, rede, containers e monitoramento, o estado desejado é descrito no playbook.
+
+Por que Kubernetes como extensão?
+
+A proposta do desafio informa que melhorias adicionais também fazem parte da avaliação.
+
+Por esse motivo, a implementação original foi mantida integralmente e foi criada uma extensão separada em kubernetes/.
+
+Essa extensão demonstra uma possível evolução da mesma aplicação para um ambiente com:
+
+orquestração;
+
+escalabilidade;
+
+self-healing;
+
+observabilidade de cluster;
+
+entrega contínua;
+
+GitOps.
+
+Conclusão
+
+O repositório apresenta duas abordagens para a mesma aplicação.
+
+Implementação principal
+
+Golang
+  +
+Docker
+  +
+Docker Compose
+  +
+NGINX
+  +
+Prometheus
+  +
+Grafana
+  +
+Ansible
+
+Essa é a implementação correspondente aos requisitos obrigatórios do desafio.
+
+Implementação adicional
+
+K3s / Kubernetes
+  +
+Argo CD
+  +
+GitOps
+  +
+GitHub Actions
+  +
+HPA
+  +
+Prometheus / Grafana
+  +
+k6
+
+A segunda implementação foi desenvolvida como extensão para demonstrar a evolução do mesmo serviço para uma arquitetura Kubernetes e um fluxo moderno de CI/CD e GitOps.
+
+Autor
+
+Davi Oliveira
+
+Repositório:
+
+https://github.com/DaviPO2001/desafio_devops_korp
