@@ -6,11 +6,11 @@ apt update
 echo "Instalando Ansible..."
 apt install -y ansible
 
-#echo "Iniciando o playbook de automação..."
+echo "Iniciando o playbook de automação..."
 
-#cd /vagrant/
+cd /vagrant/
 
-#ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
 
 
 
