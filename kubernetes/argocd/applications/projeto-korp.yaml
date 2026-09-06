@@ -39,3 +39,10 @@ spec:
       namespace: projeto-korp
       jsonPointers:
         - /spec/replicas
+
+    - group: apps
+      kind: Deployment
+      name: nginx-projeto-korp
+      namespace: projeto-korp
+      jsonPointers:
+        - /spec/replicas
