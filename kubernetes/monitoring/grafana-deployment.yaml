@@ -101,6 +101,10 @@ spec:
               mountPath: /var/lib/grafana/dashboards/projeto-korp.json
               subPath: projeto-korp.json
 
+            - name: dashboard
+              mountPath: /var/lib/grafana/dashboards/latencias-korp.json
+              subPath: latencias-korp.json
+
       volumes:
 
         - name: data

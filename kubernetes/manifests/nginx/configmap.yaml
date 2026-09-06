@@ -7,8 +7,23 @@ metadata:
 
 data:
   default.conf: |
+    log_format prometheus '$remote_addr "$request" $status $body_bytes_sent $request_time $upstream_response_time';
+
+    access_log /var/log/nginx/access.log prometheus buffer=64k flush=1s;
+
     server {
         listen 80;
+
+        location = /health {
+            proxy_pass http://http-server-projeto-korp:8080;
+
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            access_log off;
+        }
 
         location / {
             proxy_pass http://http-server-projeto-korp:8080;

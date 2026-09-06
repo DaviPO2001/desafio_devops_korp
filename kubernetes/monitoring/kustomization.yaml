@@ -20,6 +20,7 @@ configMapGenerator:
   - name: grafana-dashboard-projeto-korp
     files:
       - projeto-korp.json=dashboards/projeto-korp.json
+      - latencias-korp.json=dashboards/latencias-korp.json
 
 generatorOptions:
   disableNameSuffixHash: true

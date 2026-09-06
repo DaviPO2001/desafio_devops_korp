@@ -15,9 +15,11 @@ spec:
   maxReplicas: 2
 
   metrics:
-    - type: Resource
-      resource:
+    - type: ContainerResource
+      containerResource:
         name: cpu
+        container: nginx
+
         target:
           type: Utilization
           averageUtilization: 30
