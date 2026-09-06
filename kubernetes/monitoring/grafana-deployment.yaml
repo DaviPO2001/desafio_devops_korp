@@ -62,6 +62,7 @@ spec:
             requests:
               cpu: "200m"
               memory: "256Mi"
+
             limits:
               cpu: "750m"
               memory: "1Gi"
@@ -70,6 +71,7 @@ spec:
             httpGet:
               path: /api/health
               port: http
+
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
@@ -79,6 +81,7 @@ spec:
             httpGet:
               path: /api/health
               port: http
+
             initialDelaySeconds: 30
             periodSeconds: 20
             timeoutSeconds: 5
@@ -98,12 +101,12 @@ spec:
               subPath: dashboard-provider.yaml
 
             - name: dashboard
-              mountPath: /var/lib/grafana/dashboards/projeto-korp.json
-              subPath: projeto-korp.json
+              mountPath: /var/lib/grafana/dashboards/kubernetes-recursos-autoscaling.json
+              subPath: kubernetes-recursos-autoscaling.json
 
             - name: dashboard
-              mountPath: /var/lib/grafana/dashboards/latencias-korp.json
-              subPath: latencias-korp.json
+              mountPath: /var/lib/grafana/dashboards/http-performance-confiabilidade.json
+              subPath: http-performance-confiabilidade.json
 
       volumes:
 

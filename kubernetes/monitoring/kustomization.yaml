@@ -19,8 +19,8 @@ resources:
 configMapGenerator:
   - name: grafana-dashboard-projeto-korp
     files:
-      - projeto-korp.json=dashboards/projeto-korp.json
-      - latencias-korp.json=dashboards/latencias-korp.json
+      - kubernetes-recursos-autoscaling.json=dashboards/kubernetes-recursos-autoscaling.json
+      - http-performance-confiabilidade.json=dashboards/http-performance-confiabilidade.json
 
 generatorOptions:
   disableNameSuffixHash: true
