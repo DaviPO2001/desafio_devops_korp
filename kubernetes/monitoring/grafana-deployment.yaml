@@ -101,12 +101,12 @@ spec:
               subPath: dashboard-provider.yaml
 
             - name: dashboard
-              mountPath: /var/lib/grafana/dashboards/kubernetes-recursos-autoscaling.json
-              subPath: kubernetes-recursos-autoscaling.json
+              mountPath: /var/lib/grafana/dashboards/autoscaling.json
+              subPath: autoscaling.json
 
             - name: dashboard
-              mountPath: /var/lib/grafana/dashboards/http-performance-confiabilidade.json
-              subPath: http-performance-confiabilidade.json
+              mountPath: /var/lib/grafana/dashboards/confiabilidade.json
+              subPath: confiabilidade.json
 
       volumes:
 
