@@ -2,7 +2,7 @@
   "apiVersion": "dashboard.grafana.app/v2",
   "kind": "Dashboard",
   "metadata": {
-    "name": "projeto-korp-kubernetes-recursos-autoscaling",
+    "name": "korp-autoscaling",
     "namespace": "default"
   },
   "spec": {

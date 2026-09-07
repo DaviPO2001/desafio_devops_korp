@@ -101,12 +101,8 @@ spec:
               subPath: dashboard-provider.yaml
 
             - name: dashboard
-              mountPath: /var/lib/grafana/dashboards/autoscaling.json
-              subPath: autoscaling.json
-
-            - name: dashboard
-              mountPath: /var/lib/grafana/dashboards/confiabilidade.json
-              subPath: confiabilidade.json
+              mountPath: /var/lib/grafana/dashboards
+              readOnly: true
 
       volumes:
 
