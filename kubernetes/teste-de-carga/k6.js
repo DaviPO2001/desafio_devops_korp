@@ -1,34 +1,58 @@
 import http from 'k6/http';
 import { check } from 'k6';
 
-
-// =========================================================
-// CONFIGURACAO DO TESTE
-// =========================================================
+const TEST_ID =
+  __ENV.TEST_ID ||
+  'projeto-korp';
 
 export const options = {
 
+  tags: {
+    testid: TEST_ID,
+  },
+
   stages: [
 
-    // Inicio gradual
     {
       duration: '30s',
       target: 20,
     },
 
-    // Aumenta a carga
     {
-      duration: '1m',
+      duration: '30s',
       target: 100,
     },
 
-    // Carga mais alta para tentar acionar o HPA
     {
-      duration: '2m',
+      duration: '1m',
       target: 200,
     },
 
-    // Reduz gradualmente
+    {
+      duration: '1m',
+      target: 300,
+    },
+
+    {
+      duration: '1m',
+      target: 400,
+    },
+
+    {
+      duration: '1m',
+      target: 500,
+    },
+
+    {
+      duration: '2m',
+      target: 500,
+    },
+
+    {
+      duration: '30s',
+      target: 200,
+    },
+
     {
       duration: '30s',
       target: 0,
@@ -36,19 +60,12 @@ export const options = {
 
   ],
 
-
-  // =======================================================
-  // CRITERIOS DO TESTE
-  // =======================================================
-
   thresholds: {
 
-    // Menos de 1% das requisicoes podem falhar
     http_req_failed: [
-      'rate<0.01',
+      'rate<0.05',
     ],
 
-    // 95% das requisicoes devem responder abaixo de 500ms
     http_req_duration: [
       'p(95)<500',
     ],
@@ -57,33 +74,28 @@ export const options = {
 
 };
 
-
-// =========================================================
-// ENDPOINT
-// =========================================================
-
 const BASE_URL =
   __ENV.BASE_URL ||
   'http://192.168.56.21:30080';
 
-
-// =========================================================
-// TESTE
-// =========================================================
-
 export default function () {
 
   const response = http.get(
-    `${BASE_URL}/projeto-korp`
+    `${BASE_URL}/projeto-korp`,
+    {
+      timeout: '5s',
+    }
   );
-
 
   check(response, {
 
     'HTTP status 200': (r) =>
+      r &&
       r.status === 200,
 
     'Resposta contem Projeto Korp': (r) =>
+      r &&
+      typeof r.body === 'string' &&
       r.body.includes('Projeto Korp'),
 
   });

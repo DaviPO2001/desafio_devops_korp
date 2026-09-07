@@ -6,7 +6,7 @@ metadata:
   namespace: projeto-korp
 
 spec:
-  replicas: 1
+  replicas: 2
 
   selector:
     matchLabels:
